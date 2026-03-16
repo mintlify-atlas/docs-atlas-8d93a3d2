@@ -1,0 +1,172 @@
+---
+title: "GitLab CI/CD"
+description: "Integrate Semgrep into GitLab CI/CD pipelines to scan code on merge requests and branch pushes."
+keywords: ["gitlab", "ci/cd", "sast", "merge request", "pipeline"]
+---
+
+Semgrep integrates with GitLab CI/CD using the official `semgrep/semgrep` Docker image. You can run scans on every push, on merge requests, or as a scheduled pipeline job.
+
+## Basic setup
+
+<Steps>
+  <Step title="Add the Semgrep job to .gitlab-ci.yml">
+    Add the following job to your `.gitlab-ci.yml` file:
+
+    ```yaml .gitlab-ci.yml
+    semgrep:
+      image: semgrep/semgrep
+      script: semgrep ci
+      variables:
+        SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+    ```
+  </Step>
+
+  <Step title="Add your app token as a CI/CD variable">
+    1. Go to [semgrep.dev](https://semgrep.dev/login/) and log in or sign up.
+    2. Navigate to **Settings > Tokens** and generate an API token.
+    3. In your GitLab project, go to **Settings > CI/CD > Variables**.
+    4. Click **Add variable**, set the key to `SEMGREP_APP_TOKEN`, paste your token, and mark it as **Masked**.
+  </Step>
+
+  <Step title="Commit and run the pipeline">
+    Commit the updated `.gitlab-ci.yml`. Semgrep will run in the next pipeline. View results in the Semgrep AppSec Platform, or in the pipeline job log.
+  </Step>
+</Steps>
+
+<Note>
+  `semgrep ci` reads rules from the Semgrep AppSec Platform when `SEMGREP_APP_TOKEN` is set and posts scan results back for triage. Without a token, it falls back to `auto` config.
+</Note>
+
+## GitLab SAST output format
+
+Semgrep can produce output in GitLab's native SAST report format, which GitLab displays in the merge request security widget:
+
+```yaml .gitlab-ci.yml
+semgrep-sast:
+  image: semgrep/semgrep
+  script:
+    - semgrep scan --config auto --gitlab-sast --output gl-sast-report.json
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+```
+
+## GitLab Secrets detection output format
+
+To detect exposed secrets and credentials, use the `--gitlab-secrets` output format:
+
+```yaml .gitlab-ci.yml
+semgrep-secrets:
+  image: semgrep/semgrep
+  script:
+    - semgrep scan --config p/secrets --gitlab-secrets --output gl-secret-detection-report.json
+  artifacts:
+    reports:
+      secret_detection: gl-secret-detection-report.json
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+```
+
+## Scanning merge requests only
+
+To run Semgrep only on merge requests and skip branch pipelines:
+
+```yaml .gitlab-ci.yml
+semgrep:
+  image: semgrep/semgrep
+  script: semgrep ci
+  variables:
+    SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+```
+
+For diff-aware scanning on merge requests (scanning only changed files), `semgrep ci` handles this automatically when `SEMGREP_APP_TOKEN` is set. The `CI_MERGE_REQUEST_DIFF_BASE_SHA` environment variable is used to determine the diff base.
+
+## Caching for faster scans
+
+Cache the Semgrep rules directory to avoid re-downloading rules on every run:
+
+```yaml .gitlab-ci.yml
+semgrep:
+  image: semgrep/semgrep
+  script: semgrep ci
+  variables:
+    SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+  cache:
+    key: semgrep-rules
+    paths:
+      - .semgrep_cache/
+  before_script:
+    - mkdir -p .semgrep_cache
+    - export SEMGREP_RULES_CACHE_PATH=$PWD/.semgrep_cache
+```
+
+## GitLab SAST template integration
+
+GitLab provides a built-in SAST CI/CD template. You can include it and override the Semgrep analyzer:
+
+```yaml .gitlab-ci.yml
+include:
+  - template: Security/SAST.gitlab-ci.yml
+
+variables:
+  SAST_EXCLUDED_ANALYZERS: "bandit,brakeman,eslint,flawfinder,gosec,kubesec,mobsf,nodejs-scan,phpcs-security-audit,pmd-apex,security-code-scan,sobelow,spotbugs"
+```
+
+Alternatively, use a fully custom Semgrep job alongside the GitLab SAST template:
+
+```yaml .gitlab-ci.yml
+include:
+  - template: Security/SAST.gitlab-ci.yml
+
+semgrep-custom:
+  image: semgrep/semgrep
+  stage: test
+  script:
+    - semgrep scan --config p/security-audit --gitlab-sast --output gl-sast-custom.json
+  artifacts:
+    reports:
+      sast: gl-sast-custom.json
+```
+
+<Tip>
+  Using both `semgrep ci` (with `SEMGREP_APP_TOKEN`) and the GitLab SAST template together gives you centralized triage in the Semgrep AppSec Platform plus native GitLab merge request security widgets.
+</Tip>
+
+## Complete pipeline example
+
+A full example combining SAST, secrets detection, and platform reporting:
+
+```yaml .gitlab-ci.yml
+stages:
+  - test
+
+semgrep:
+  stage: test
+  image: semgrep/semgrep
+  variables:
+    SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+  script:
+    - semgrep ci
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+semgrep-sast:
+  stage: test
+  image: semgrep/semgrep
+  script:
+    - semgrep scan --config auto --gitlab-sast --output gl-sast-report.json
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+```

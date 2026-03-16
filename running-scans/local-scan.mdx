@@ -1,0 +1,230 @@
+---
+title: "Running a local scan"
+description: "Scan code on your local machine using the semgrep scan command."
+keywords: ["semgrep scan", "local scan", "cli", "config", "pattern", "jobs", "timeout"]
+---
+
+## Basic scan
+
+To scan the current directory using Semgrep's automatically-selected rules, run:
+
+```bash
+semgrep scan --config=auto .
+```
+
+Semgrep prints findings to stdout in a human-readable format and exits with a non-zero code if any findings are reported.
+
+## Specifying rules
+
+The `--config` flag (short forms: `-c` or `-f`) controls which rules Semgrep runs. You can pass it multiple times to combine rule sources.
+
+### Registry packs
+
+Run a curated pack from the [Semgrep Registry](https://semgrep.dev/r):
+
+```bash
+# Python-focused rules
+semgrep scan --config=p/python .
+
+# Security audit rules
+semgrep scan --config=p/security-audit .
+
+# OWASP Top Ten rules
+semgrep scan --config=p/owasp-top-ten .
+```
+
+### Local rule files
+
+Point to a YAML rule file on disk:
+
+```bash
+semgrep scan --config=./my-rules.yaml .
+```
+
+### Multiple configs
+
+Combine registry packs and local files in a single scan:
+
+```bash
+semgrep scan --config=p/python --config=./custom.yaml .
+```
+
+### URL
+
+Load rules directly from a URL:
+
+```bash
+semgrep scan --config=https://example.com/rules.yaml .
+```
+
+<Note>
+You can also set the `SEMGREP_RULES` environment variable instead of passing `--config` flags. The value follows the same syntax (e.g., `SEMGREP_RULES=p/python`).
+</Note>
+
+## Inline patterns
+
+Search for a code pattern without writing a rule file using `-e` (short for `--pattern`) together with `--lang`:
+
+```bash
+# Find all calls to exec() in Python files
+semgrep -e 'exec(...)' --lang python .
+
+# Find hardcoded passwords in JavaScript
+semgrep -e 'password = "..."' --lang javascript .
+```
+
+<Tip>
+Inline patterns support the full Semgrep pattern syntax including metavariables (`$X`) and ellipsis operators (`...`).
+</Tip>
+
+## Targeting specific paths
+
+Pass one or more paths as positional arguments to limit the scan:
+
+```bash
+# Scan a single directory
+semgrep scan --config=auto src/
+
+# Scan specific files
+semgrep scan --config=auto src/auth.py src/db.py
+
+# Scan multiple directories
+semgrep scan --config=auto src/ lib/
+```
+
+Use `--include` and `--exclude` to filter by glob pattern:
+
+```bash
+# Only scan Python files
+semgrep scan --config=auto --include='*.py' .
+
+# Skip test directories
+semgrep scan --config=auto --exclude='tests/' --exclude='*_test.py' .
+```
+
+See [Ignoring files and findings](/running-scans/ignoring-files) for more on path filtering.
+
+## Performance options
+
+### Parallel jobs
+
+Semgrep uses all available CPU cores by default. Use `-j` to set the number of parallel workers:
+
+```bash
+# Run with 4 parallel jobs
+semgrep scan --config=auto -j 4 .
+```
+
+### Per-file timeout
+
+By default, Semgrep stops analyzing a file after **5 seconds**. Increase the timeout for large files:
+
+```bash
+# Allow up to 30 seconds per file
+semgrep scan --config=auto --timeout=30 .
+```
+
+Set `--timeout=0` to disable the timeout entirely.
+
+You can also set the timeout via the `SEMGREP_TIMEOUT` environment variable.
+
+### Maximum file size
+
+Files larger than 1 MB are skipped by default. Use `--max-target-bytes` to change this limit:
+
+```bash
+# Scan files up to 5 MB
+semgrep scan --config=auto --max-target-bytes=5MB .
+
+# Disable the size limit
+semgrep scan --config=auto --max-target-bytes=0 .
+```
+
+### Timeout threshold
+
+Use `--timeout-threshold` to set the number of rules that may time out on a single file before that file is skipped entirely (default: 3):
+
+```bash
+semgrep scan --config=auto --timeout=10 --timeout-threshold=5 .
+```
+
+## Reading scan output
+
+Each finding includes:
+
+- **Rule ID** — the rule that triggered the finding
+- **File path and line number** — where the finding occurred
+- **Code snippet** — the matched code with surrounding context
+- **Severity** — `INFO`, `WARNING`, or `ERROR`
+- **Message** — a description of the issue and suggested remediation
+
+Example output:
+
+```
+my-rules.yaml (line 5)
+  ./src/app.py:42
+  ❯❯❱ python.lang.security.dangerous-exec
+        Use of exec() with user-controlled input
+
+         40 ┆ user_input = request.args.get('cmd')
+         41 ┆
+      ❯  42 ┆ exec(user_input)
+         43 ┆
+```
+
+After the findings, Semgrep prints a summary showing the total number of findings, files scanned, and any files that were skipped.
+
+## Filtering by severity
+
+Use `--severity` to show only findings at or above a specified level:
+
+```bash
+# Show only ERROR severity findings
+semgrep scan --config=auto --severity=ERROR .
+
+# Show WARNING and ERROR findings
+semgrep scan --config=auto --severity=WARNING .
+```
+
+## Exit codes
+
+Semgrep uses these exit codes:
+
+| Code | Meaning |
+|------|---------|
+| `0`  | No findings, or `--error` not set |
+| `1`  | Findings reported |
+| `2`  | Invalid usage (bad flag, missing config) |
+| `3`  | Unexpected internal error |
+| `4`  | Missing or invalid API key |
+| `5`  | Invalid rule schema |
+| `7`  | Timeout or out of memory |
+
+See [Exit codes](/reference/exit-codes) for the full reference.
+
+## Troubleshooting
+
+Use `--verbose` to see which files Semgrep is scanning and which rules it is loading:
+
+```bash
+semgrep scan --config=auto --verbose .
+```
+
+Use `--debug` for full debug output including rule parsing, matching decisions, and subprocess calls:
+
+```bash
+semgrep scan --config=auto --debug .
+```
+
+<Warning>
+`--debug` produces a large amount of output. Redirect it to a file when sharing with support:
+```bash
+semgrep scan --config=auto --debug . 2> debug.log
+```
+</Warning>
+
+Use `--quiet` (`-q`) to suppress all output except findings:
+
+```bash
+semgrep scan --config=auto --quiet .
+```

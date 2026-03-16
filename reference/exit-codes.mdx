@@ -1,0 +1,150 @@
+---
+title: 'Exit codes'
+description: 'Semgrep exit codes and what they mean for CI scripting and automation.'
+keywords: ['exit codes', 'error codes', 'ci', 'automation', 'bash']
+---
+
+Semgrep uses distinct exit codes to communicate the outcome of a scan. You can use these codes in shell scripts and CI pipelines to take different actions based on what happened.
+
+## Exit code reference
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| `0` | `OK_EXIT_CODE` | Success. Scan completed with no findings (or all findings were suppressed). |
+| `1` | `FINDINGS_EXIT_CODE` | Scan completed and findings were reported. |
+| `2` | `FATAL_EXIT_CODE` | Fatal error. Invalid arguments, authentication failure, or an unrecoverable runtime error. |
+| `3` | `TARGET_PARSE_FAILURE_EXIT_CODE` | A target source file could not be parsed. |
+| `4` | `RULE_PARSE_FAILURE_EXIT_CODE` | A rule file could not be parsed. Check the rule YAML syntax. |
+| `5` | `UNPARSEABLE_YAML_EXIT_CODE` | A YAML configuration file is invalid or cannot be parsed. |
+| `7` | `MISSING_CONFIG_EXIT_CODE` | No rules are configured. Semgrep could not find a valid configuration. |
+| `8` | `INVALID_LANGUAGE_EXIT_CODE` | An unknown or unsupported language was specified. |
+| `13` | `INVALID_API_KEY_EXIT_CODE` | The Semgrep API key is missing or invalid. |
+
+<Note>
+Some exit codes from earlier versions of Semgrep (6, 9–12, 14) are no longer in use. If you encounter an undocumented exit code from a newer build, it may indicate an unexpected error; check stderr for details.
+</Note>
+
+---
+
+## Detailed descriptions
+
+<AccordionGroup>
+
+  <Accordion title="0 — Success">
+    The scan ran to completion without any findings to report, or all findings were suppressed by `# nosem` comments.
+
+    In `semgrep scan`, exit code `0` also means no `--error` flag was set and no findings reached the threshold to block.
+
+    In `semgrep ci`, exit code `0` means either no blocking findings were found or the run was in audit mode.
+  </Accordion>
+
+  <Accordion title="1 — Findings found">
+    The scan completed and Semgrep reported one or more findings.
+
+    In `semgrep ci`, exit code `1` is returned only when blocking findings are present (rules marked as blocking in Semgrep AppSec Platform). Non-blocking findings do not cause a non-zero exit code.
+
+    In `semgrep scan`, exit code `1` is only returned when `--error` is set.
+  </Accordion>
+
+  <Accordion title="2 — Fatal error">
+    A fatal, unrecoverable error occurred. Common causes:
+
+    - Invalid CLI flags or conflicting options
+    - Missing required flags (e.g. `-l/--lang` without `-e/--pattern`)
+    - Authentication failure when using `semgrep ci` without a valid token
+    - Trying to run `semgrep ci` with both `--config` and an active login session
+    - A runtime exception not covered by a more specific exit code
+
+    Check stderr for the specific error message.
+  </Accordion>
+
+  <Accordion title="3 — Target parse error">
+    One or more target source files could not be parsed by Semgrep's language parser. This typically occurs when the source file contains syntax not yet supported by the parser, or when the file is not valid source code.
+
+    Semgrep will still report findings from files that parsed successfully. Use `--verbose` to see which files failed.
+  </Accordion>
+
+  <Accordion title="4 — Rule parse error">
+    One or more rule files could not be loaded. The rule YAML is malformed or contains an invalid field.
+
+    Use `semgrep scan --validate --config <path>` to identify the specific error.
+  </Accordion>
+
+  <Accordion title="5 — Unparseable YAML">
+    A YAML configuration file (rule file or semgrep config) is syntactically invalid and cannot be parsed at all. This is a lower-level error than code `4`: the file cannot even be read as YAML.
+  </Accordion>
+
+  <Accordion title="7 — Missing configuration">
+    No rules were found for the scan. This happens when:
+
+    - `semgrep ci` is run without being logged in and without `--config`
+    - The specified config path does not contain any rules
+    - Semgrep AppSec Platform returned an empty rule set (no policies configured)
+  </Accordion>
+
+  <Accordion title="8 — Invalid language">
+    An unknown or unsupported language identifier was passed to `--lang`.
+
+    See the [rule schema language table](/reference/rule-schema#languages) for valid identifiers.
+  </Accordion>
+
+  <Accordion title="13 — Invalid API key">
+    The API key used to authenticate with Semgrep AppSec Platform is missing, expired, or invalid.
+
+    - Set `SEMGREP_APP_TOKEN` to a valid token, or run `semgrep login`.
+    - If using `semgrep ci`, ensure the token has the required CI scan permissions.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Using exit codes in CI scripts
+
+Exit codes allow CI pipelines to distinguish between infrastructure failures and actual security findings.
+
+### Shell script example
+
+```bash
+#!/bin/bash
+semgrep scan --config p/default .
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "Scan complete: no findings."
+elif [ $EXIT_CODE -eq 1 ]; then
+  echo "Scan complete: findings reported."
+  exit 1
+elif [ $EXIT_CODE -eq 4 ]; then
+  echo "Rule error: check your rule files."
+  exit 1
+else
+  echo "Semgrep error (exit code $EXIT_CODE). Check stderr for details."
+  exit 1
+fi
+```
+
+### GitHub Actions example
+
+```yaml
+- name: Run Semgrep
+  run: semgrep ci
+  env:
+    SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+  # Exit code 1 means blocking findings; treat as failure
+  # Exit code 0 means clean; pass
+```
+
+### Distinguishing scan errors from findings
+
+If you want your pipeline to fail on findings but not on infrastructure errors (network timeouts, invalid rules), use `--suppress-errors` with `semgrep ci`:
+
+```bash
+semgrep ci --suppress-errors
+```
+
+With `--suppress-errors`, non-fatal infrastructure errors produce exit code `0` instead of `2`. Findings still produce exit code `1`.
+
+<Tip>
+For automated pipelines, set `SEMGREP_SUPPRESS_ERRORS=true` as an environment variable to silently handle transient errors without modifying your CI command.
+</Tip>

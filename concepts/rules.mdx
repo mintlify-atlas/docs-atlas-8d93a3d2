@@ -1,0 +1,285 @@
+---
+title: 'Rules'
+description: 'Understand the structure of a Semgrep rule, including YAML schema, severity levels, metadata, and how to run rules from local files or the registry.'
+keywords: ['semgrep', 'rules', 'yaml', 'severity', 'metadata', 'autofix', 'rule schema']
+---
+
+A Semgrep **rule** is a YAML document that describes a code pattern to find, the languages it applies to, and the message to display when a match is found. Rules are the fundamental unit of analysis in Semgrep — everything from security audits to style enforcement is expressed as one or more rules.
+
+## Rule structure
+
+Every rule lives inside a top-level `rules:` list. The minimal required fields are `id`, a pattern key, `message`, `languages`, and `severity`.
+
+```yaml
+rules:
+  - id: no-print-statements
+    pattern: print(...)
+    message: |
+      Avoid print() in production code. Use a logger instead.
+    languages: [python]
+    severity: WARNING
+```
+
+### Full schema reference
+
+```yaml
+rules:
+  - id: string                    # required — unique rule identifier
+    # --- Pattern (exactly one of the following) ---
+    pattern: string               # single pattern
+    patterns:                     # AND — all sub-patterns must match
+      - pattern: ...
+    pattern-either:               # OR — any sub-pattern must match
+      - pattern: ...
+    # --- Required fields ---
+    message: string               # displayed when a match is found
+    languages: [string, ...]      # target languages
+    severity: ERROR|WARNING|INFO|INVENTORY|EXPERIMENT
+    # --- Optional fields ---
+    metadata:                     # arbitrary key/value pairs
+      cwe: "CWE-89: SQL Injection"
+      confidence: HIGH
+      impact: HIGH
+      likelihood: MEDIUM
+    fix: string                   # autofix replacement string
+    fix-regex:                    # regex-based autofix
+      regex: string
+      replacement: string
+      count: int                  # optional: number of replacements
+    paths:
+      include: ["src/**"]         # only scan these paths
+      exclude: ["tests/**"]       # skip these paths
+    options:                      # engine options
+      generic_engine: spacegrep   # for generic language rules
+    min-version: "1.0.0"          # minimum supported Semgrep version
+    max-version: "2.0.0"          # maximum supported Semgrep version
+```
+
+## Rule IDs
+
+A rule `id` uniquely identifies a rule within a file. When Semgrep loads rules from a directory, it automatically prepends the file path as a namespace prefix.
+
+**Format:** `[a-zA-Z0-9._-]+`
+
+**Conventions:**
+- Use kebab-case: `no-eval`, `sql-injection`, `hardcoded-secret`
+- Prefix with language and category when publishing: `python.security.sql-injection`
+- Avoid generic IDs like `rule1` or `test`
+
+```yaml
+# Rule in file: security/python/injection.yaml
+# Loaded ID becomes: security.python.injection.sql-string-concat
+rules:
+  - id: sql-string-concat
+    ...
+```
+
+## Severity levels
+
+Semgrep supports five severity levels. Choose the level that matches the impact of the finding on production code.
+
+| Severity | When to use |
+|---|---|
+| `ERROR` | Definite bugs or security vulnerabilities that require immediate action. |
+| `WARNING` | Likely issues or risky patterns that should be reviewed. |
+| `INFO` | Style violations, best-practice suggestions, or informational findings. |
+| `INVENTORY` | Track usage of APIs or patterns without necessarily flagging them. |
+| `EXPERIMENT` | Prototype rules under development; findings should not be acted on. |
+
+```yaml
+rules:
+  - id: hardcoded-password
+    pattern: password = "..."
+    message: Hardcoded password detected.
+    languages: [python]
+    severity: ERROR   # definite security issue
+
+  - id: todo-comment
+    pattern-regex: "#\\s*TODO"
+    message: Unresolved TODO comment.
+    languages: [python]
+    severity: INFO    # informational only
+```
+
+## Message formatting
+
+The `message` field supports interpolation of matched metavariable values using `$METAVAR` syntax. When a rule matches, Semgrep replaces each metavariable token in the message with the actual matched source text.
+
+```yaml
+rules:
+  - id: dangerous-exec
+    pattern: exec($CMD)
+    message: |
+      Avoid exec() with dynamic input. The value `$CMD` may be
+      user-controlled and lead to command injection.
+    languages: [python]
+    severity: ERROR
+```
+
+If `$CMD` matched `user_input`, the displayed message becomes:
+
+> Avoid exec() with dynamic input. The value `user_input` may be user-controlled and lead to command injection.
+
+## Metadata
+
+The `metadata` field accepts any YAML key/value structure. Semgrep does not validate metadata content, but certain keys are widely used by the Semgrep AppSec Platform and the public registry.
+
+```yaml
+metadata:
+  # Security classification
+  cwe:
+    - "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+  owasp:
+    - "A01:2021 - Injection"
+
+  # Signal quality
+  confidence: HIGH      # HIGH | MEDIUM | LOW
+  impact: HIGH          # HIGH | MEDIUM | LOW
+  likelihood: MEDIUM    # HIGH | MEDIUM | LOW
+
+  # References
+  references:
+    - https://owasp.org/www-community/attacks/SQL_Injection
+
+  # Rule provenance
+  category: security    # security | correctness | maintainability | performance
+  technology:
+    - django
+  subcategory:
+    - vuln
+  authors:
+    - security-team
+```
+
+<Note>
+Metadata does not affect rule matching. It is attached to findings for downstream processing, triage, and display.
+</Note>
+
+## Autofix
+
+Rules can include a `fix:` field to provide an automatic code replacement. When you run `semgrep --autofix`, Semgrep rewrites matched code using the fix string, with metavariable interpolation.
+
+```yaml
+rules:
+  - id: use-https
+    pattern: http://$URL
+    fix: https://$URL
+    message: Use HTTPS instead of HTTP for `$URL`.
+    languages: [javascript]
+    severity: WARNING
+```
+
+For more complex replacements, use `fix-regex:`:
+
+```yaml
+rules:
+  - id: rename-deprecated-func
+    pattern: old_function($ARGS)
+    fix-regex:
+      regex: "old_function"
+      replacement: "new_function"
+    message: Replace old_function with new_function.
+    languages: [python]
+    severity: WARNING
+```
+
+## Scoping rules to paths
+
+Use `paths:` to restrict which files a rule applies to:
+
+```yaml
+rules:
+  - id: no-debug-logging
+    pattern: logger.debug($MSG)
+    message: Remove debug logging before merging.
+    languages: [java]
+    severity: WARNING
+    paths:
+      include:
+        - "src/**"
+      exclude:
+        - "src/test/**"
+        - "**/*Test.java"
+```
+
+Patterns follow gitignore-style glob matching.
+
+## Running rules
+
+<Steps>
+  <Step title="Run a local rule file">
+    Point Semgrep at a rule file or directory with `--config`:
+
+    ```bash
+    # Single rule file
+    semgrep --config rules/no-print.yaml src/
+
+    # Directory of rules
+    semgrep --config rules/ src/
+    ```
+  </Step>
+
+  <Step title="Run a quick one-off pattern">
+    Use `-e` and `--lang` to run an inline pattern without a rule file:
+
+    ```bash
+    semgrep -e '$X == $X' --lang=python src/
+    ```
+  </Step>
+
+  <Step title="Run rules from the registry">
+    Use a registry pack with `p/<pack-name>`:
+
+    ```bash
+    # Language-specific packs
+    semgrep --config p/python src/
+    semgrep --config p/javascript src/
+    semgrep --config p/java src/
+
+    # Security audit packs
+    semgrep --config p/security-audit src/
+    semgrep --config p/owasp-top-ten src/
+
+    # Run all default rules
+    semgrep --config auto src/
+    ```
+  </Step>
+
+  <Step title="Run CI scans">
+    After logging in with `semgrep login`, use `semgrep ci` to scan with your organization's configured policies:
+
+    ```bash
+    semgrep login
+    semgrep ci
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+The following rule detects SQL string concatenation in Python and provides an autofix suggestion:
+
+```yaml
+rules:
+  - id: python-sql-injection
+    patterns:
+      - pattern: $QUERY = $PREFIX + $USER_INPUT
+      - metavariable-regex:
+          metavariable: $PREFIX
+          regex: '.*SELECT.*'
+    message: |
+      Possible SQL injection via string concatenation in `$QUERY`.
+      Use parameterized queries instead of building SQL with `$USER_INPUT`.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe:
+        - "CWE-89: SQL Injection"
+      confidence: MEDIUM
+      impact: HIGH
+      likelihood: MEDIUM
+      category: security
+    paths:
+      exclude:
+        - "tests/**"
+```

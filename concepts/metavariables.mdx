@@ -1,0 +1,215 @@
+---
+title: 'Metavariables'
+description: 'Learn how Semgrep metavariables work, including named, wildcard, and ellipsis metavariables, metavariable conditions, and using metavariables in messages.'
+keywords: ['semgrep', 'metavariables', 'metavariable-regex', 'metavariable-pattern', 'metavariable-comparison', 'metavariable-type']
+---
+
+Metavariables are Semgrep's placeholder syntax. A metavariable in a pattern matches any code expression and optionally binds that code for later use — in conditions, in other patterns, or in the match message.
+
+## Syntax
+
+A metavariable is a `$`-prefixed identifier written in **UPPERCASE**. This uppercase requirement distinguishes metavariables from language-level identifiers that begin with `$` (such as PHP superglobals like `$_GET` or JavaScript variables).
+
+```
+$X          — matches any single expression, binds it to $X
+$FOO        — same, with a descriptive name
+$_          — anonymous wildcard, matches anything but does not bind
+$...ARGS    — ellipsis metavariable, matches zero or more arguments
+```
+
+**Valid naming rules:** `$` followed by one or more uppercase letters, digits, or underscores. The first character after `$` must be a letter or underscore (`$1`-style names are reserved for regex capture groups).
+
+## Types of metavariables
+
+### Named metavariables — `$X`, `$FOO`
+
+A named metavariable captures a single expression and reuses the same value everywhere the name appears in the pattern. If `$X` is bound once, every subsequent `$X` in the same rule must match the identical code.
+
+```yaml
+rules:
+  - id: comparison-to-self
+    pattern: $X == $X
+    message: "Left and right sides are identical: `$X`. This is likely a bug."
+    languages: [python, javascript, java]
+    severity: ERROR
+```
+
+This matches `x == x` and `len(arr) == len(arr)` but **not** `a == b`.
+
+### Wildcard metavariable — `$_`
+
+The anonymous metavariable `$_` matches any expression but does not bind a value. Use it when you don't care about the matched content and don't need to reference it elsewhere.
+
+```yaml
+rules:
+  - id: open-with-mode
+    pattern: open($_, $MODE)
+    message: File opened with explicit mode `$MODE`.
+    languages: [python]
+    severity: INFO
+```
+
+`$_` matches the filename argument without binding it, while `$MODE` captures the second argument.
+
+### Ellipsis metavariable — `$...NAME`
+
+Captures zero or more arguments, statements, or list elements. Unlike the plain `...` operator, `$...ARGS` can be referenced in the message or in other conditions.
+
+```yaml
+rules:
+  - id: log-all-args
+    pattern: logging.info($...ARGS)
+    message: "Logging call with arguments: $...ARGS"
+    languages: [python]
+    severity: INFO
+```
+
+### Typed metavariables
+
+Some languages support type annotations in patterns. A typed metavariable matches only expressions of the specified type.
+
+```yaml
+rules:
+  - id: java-int-zero-check
+    pattern: (int $X) == 0
+    message: Comparing integer `$X` to zero directly.
+    languages: [java]
+    severity: INFO
+```
+
+Typed metavariables are supported in **Java**, **Go**, **Kotlin**, and **TypeScript**.
+
+## Metavariable conditions
+
+Conditions refine which metavariable bindings are accepted. They appear alongside patterns inside a `patterns:` block.
+
+### `metavariable-regex:`
+
+Filters a metavariable binding by matching its text content against a regular expression.
+
+```yaml
+rules:
+  - id: weak-cipher
+    patterns:
+      - pattern: Cipher.getInstance($ALGO)
+      - metavariable-regex:
+          metavariable: $ALGO
+          regex: '"(DES|RC4|RC2).*"'
+    message: "Weak cipher algorithm `$ALGO` detected. Use AES."
+    languages: [java]
+    severity: ERROR
+```
+
+### `metavariable-pattern:`
+
+Applies a full Semgrep pattern to the code captured by a metavariable. This enables nested pattern matching — useful when a metavariable contains an expression that you want to inspect further.
+
+```yaml
+rules:
+  - id: tainted-format-string
+    patterns:
+      - pattern: logger.info($MSG)
+      - metavariable-pattern:
+          metavariable: $MSG
+          pattern: $X + $Y
+    message: |
+      String concatenation passed directly to logger.info(). Consider
+      using a format string or structured logging.
+    languages: [python]
+    severity: WARNING
+```
+
+You can also specify a different `language:` inside `metavariable-pattern:` to analyze embedded content written in another language (for example, an SQL string inside a Python file).
+
+### `metavariable-comparison:`
+
+Compares a metavariable value to a constant using standard comparison operators. The `comparison:` field is a Python expression.
+
+```yaml
+rules:
+  - id: short-password-length
+    patterns:
+      - pattern: set_min_password_length($N)
+      - metavariable-comparison:
+          metavariable: $N
+          comparison: $N < 8
+    message: "Minimum password length `$N` is below the recommended minimum of 8."
+    languages: [python]
+    severity: WARNING
+```
+
+Supported operators: `<`, `<=`, `>`, `>=`, `==`, `!=`, `in`, `not in`.
+
+### `metavariable-type:`
+
+Filters matches by the inferred type of the captured expression. Requires type information to be available.
+
+```yaml
+rules:
+  - id: string-to-exec
+    patterns:
+      - pattern: exec($CMD)
+      - metavariable-type:
+          metavariable: $CMD
+          types:
+            - str
+    message: exec() called with a string argument `$CMD`.
+    languages: [python]
+    severity: ERROR
+```
+
+<Note>
+`metavariable-type:` requires Semgrep Pro engine for full type inference. Results may be incomplete with the Community Edition engine.
+</Note>
+
+## Using metavariables in messages
+
+Any metavariable bound by the rule's patterns can be referenced in the `message:` field using `$METAVAR` syntax. Semgrep replaces each token with the matched source text.
+
+```yaml
+rules:
+  - id: insecure-cookie
+    patterns:
+      - pattern: $RESPONSE.set_cookie($NAME, ..., secure=False, ...)
+    message: |
+      Cookie `$NAME` is set without the `Secure` flag on `$RESPONSE`.
+      This allows the cookie to be transmitted over plain HTTP.
+    languages: [python]
+    severity: ERROR
+```
+
+If `$RESPONSE` matched `resp` and `$NAME` matched `"session_id"`, the message reads:
+
+> Cookie `"session_id"` is set without the `Secure` flag on `resp`.
+
+## Complete example
+
+The following rule combines several metavariable features to find object methods that call both `connect()` and `execute()` in sequence, where the query contains a `+` (possible concatenation):
+
+```yaml
+rules:
+  - id: db-execute-after-connect
+    patterns:
+      - pattern: |
+          $DB.connect(...)
+          ...
+          $DB.execute($QUERY)
+      - metavariable-regex:
+          metavariable: $QUERY
+          regex: '.*\+.*'
+    message: |
+      `$DB.execute()` is called with a concatenated query `$QUERY` after
+      connecting. Use parameterized queries to prevent SQL injection.
+    languages: [python]
+    severity: ERROR
+```
+
+## Summary
+
+| Syntax | Name | Behavior |
+|---|---|---|
+| `$X` | Named | Captures one expression; enforces equality on reuse |
+| `$FOO` | Named (descriptive) | Same as `$X` |
+| `$_` | Wildcard | Matches one expression; no binding |
+| `$...ARGS` | Ellipsis | Captures zero or more items |
+| `(T $X)` | Typed | Captures only expressions of type `T` |

@@ -1,0 +1,129 @@
+---
+title: 'Contributing overview'
+description: 'Learn how to contribute to Semgrep — bug reports, feature requests, rules, and code.'
+keywords: ['contributing', 'open source', 'pull request', 'community']
+---
+
+Thank you for your interest in contributing to Semgrep. Contributions of all kinds are welcome, from filing bug reports to writing new analysis rules to submitting code changes.
+
+## Ways to contribute
+
+<CardGroup cols={2}>
+  <Card title="Report a bug" icon="bug" href="https://github.com/semgrep/semgrep/issues/new?template=bug_report.md">
+    Open a GitHub issue with steps to reproduce, expected behavior, and actual behavior.
+  </Card>
+  <Card title="Request a feature" icon="lightbulb" href="https://github.com/semgrep/semgrep/issues/new?template=feature_request.md">
+    Describe the use case and proposed solution in a GitHub issue before starting implementation.
+  </Card>
+  <Card title="Write rules" icon="pen-to-square" href="https://semgrep.dev/docs/contributing/contributing-rules/">
+    Contribute patterns to the Semgrep Registry to help the community find common bugs and vulnerabilities.
+  </Card>
+  <Card title="Contribute code" icon="code" href="/contributing/development-setup">
+    Fix bugs, implement features, or improve performance in the OCaml core or Python CLI.
+  </Card>
+</CardGroup>
+
+## Code of conduct
+
+Semgrep follows the [Contributor Covenant](https://www.contributor-covenant.org/). All contributors are expected to uphold respectful and constructive communication in issues, pull requests, and community spaces.
+
+## Contribution workflow
+
+<Steps>
+  <Step title="Fork the repository">
+    Fork [semgrep/semgrep](https://github.com/semgrep/semgrep) on GitHub, then clone your fork locally:
+
+    ```bash
+    git clone https://github.com/<your-username>/semgrep.git
+    cd semgrep
+    ```
+  </Step>
+
+  <Step title="Create a branch">
+    Use the `username/brief-description` branch naming format:
+
+    ```bash
+    git checkout -b yourname/fix-false-positive-in-taint
+    ```
+
+    Examples from the project: `brandon/fix-code-actions-hanging`, `yosef/upgrade-cli-deps`.
+  </Step>
+
+  <Step title="Set up your development environment">
+    Follow the [development setup guide](/contributing/development-setup) to build Semgrep from source and install the required dependencies.
+  </Step>
+
+  <Step title="Make your changes">
+    Implement your fix or feature. Keep commits focused and atomic — one logical change per commit.
+
+    - For OCaml changes, edit files under `src/`.
+    - For Python CLI changes, edit files under `cli/`.
+    - Update documentation if your change affects user-facing behavior.
+  </Step>
+
+  <Step title="Run tests">
+    Verify your changes do not break existing behavior:
+
+    ```bash
+    # Run OCaml core tests
+    make test
+
+    # Run all tests including Python CLI
+    make test-all
+    ```
+
+    See [development setup](/contributing/development-setup) for how to run specific tests.
+  </Step>
+
+  <Step title="Submit a pull request">
+    Push your branch and open a pull request against `main`. Include a clear description of what changed and why, and reference any related issues.
+  </Step>
+</Steps>
+
+## Commit message conventions
+
+Semgrep uses [conventional commits](https://www.conventionalcommits.org/):
+
+| Prefix | Use for |
+|--------|---------|
+| `feat:` | New features or capabilities |
+| `fix:` | Bug fixes |
+| `chore:` | Maintenance, dependency updates, refactoring |
+| `test:` | Adding or updating tests |
+| `docs:` | Documentation changes |
+
+```bash
+# Good examples
+git commit -m "fix: handle nil pointer in taint analysis"
+git commit -m "feat: add support for Ruby 3.2 syntax"
+git commit -m "test: add regression test for issue #4321"
+```
+
+Reference issue numbers when applicable: `fix: handle nil pointer (#4321)`.
+
+## Pull request guidelines
+
+Before submitting a pull request:
+
+- Run `make test` and confirm all tests pass.
+- Update documentation if the change affects user-facing behavior.
+- Flag any security implications to the security team in the PR description.
+- Ensure no sensitive information is logged at INFO, WARNING, or ERROR levels.
+- Keep the PR focused — one feature or fix per PR makes review faster.
+
+In your PR description, include:
+
+1. **What** changed and a brief summary of the approach.
+2. **Why** — the motivation, linked to a GitHub issue where applicable.
+3. **How to test** — steps a reviewer can follow to verify the change.
+4. Any **known limitations** or follow-up work.
+
+<Note>
+  For significant changes, open a GitHub issue first to discuss the approach before investing time in implementation.
+</Note>
+
+## Getting help
+
+- **GitHub issues**: Search [existing issues](https://github.com/semgrep/semgrep/issues) before opening a new one.
+- **Semgrep Community Slack**: Join at [go.semgrep.dev/slack](https://go.semgrep.dev/slack) for real-time discussion.
+- **Documentation**: Full contributing guidelines are at [semgrep.dev/docs/contributing/](https://semgrep.dev/docs/contributing/).

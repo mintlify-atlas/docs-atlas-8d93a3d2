@@ -1,0 +1,214 @@
+---
+title: "Autofix"
+description: "Automatically rewrite code when Semgrep finds a match using fix or fix-regex."
+keywords: ["autofix", "fix", "fix-regex", "code rewrite", "automated fix", "semgrep fix"]
+---
+
+Autofix lets Semgrep rewrite code automatically when a rule matches. Instead of only reporting a finding, Semgrep can apply a code change to resolve it. This is useful for enforcing APIs, migrating deprecated function calls, and correcting common anti-patterns at scale.
+
+## Simple fix
+
+Add a `fix` field to any rule. The fix uses the same metavariable bindings captured in the pattern:
+
+```yaml fix-example.yaml
+rules:
+  - id: use-is-none
+    pattern: $X == None
+    fix: $X is None
+    message: Use `$X is None` instead of `$X == None`.
+    languages: [python]
+    severity: WARNING
+```
+
+When Semgrep matches `result == None`, it rewrites it to `result is None` and preserves the captured value of `$X`.
+
+You can use any metavariable that appears in the pattern:
+
+```yaml fix-metavar.yaml
+rules:
+  - id: use-dict-get
+    pattern: $DICT[$KEY]
+    fix: $DICT.get($KEY)
+    message: Use `.get()` to avoid a KeyError.
+    languages: [python]
+    severity: WARNING
+```
+
+## Fix with regex
+
+For cases where pattern-based fixing is too broad, use `fix-regex` to apply a regex substitution on the matched range:
+
+```yaml fix-regex-example.yaml
+rules:
+  - id: fix-equality-none
+    pattern-regex: '==\s*None'
+    fix-regex:
+      regex: '==\s*None'
+      replacement: 'is None'
+    message: Use `is None` instead of `== None`.
+    languages: [python, generic]
+    severity: WARNING
+```
+
+The `fix-regex` field takes:
+
+| Field | Description |
+|---|---|
+| `regex` | PCRE2 regular expression to match within the matched range. |
+| `replacement` | Replacement string. Use `$1`, `$2`, etc. for capture groups (or `\1`, `\2` for legacy compatibility). |
+| `count` | Optional integer. If set, only apply the replacement to the first `count` occurrences within the match. |
+
+<Note>
+The regex in `fix-regex` is applied to the text of the matched range, not the entire file. This means it only replaces within the region that the pattern matched.
+</Note>
+
+## Running autofix
+
+### Apply fixes
+
+Pass `--autofix` to apply fixes directly to your files:
+
+```bash
+semgrep scan --autofix --config my-rule.yaml .
+```
+
+Semgrep applies each fix to the matched region in the file and saves the result. If multiple fixes apply to overlapping regions, only the fixes without conflicts are applied.
+
+### Preview without applying
+
+Use `--autofix --dryrun` to see what changes would be made without modifying any files:
+
+```bash
+semgrep scan --autofix --dryrun --config my-rule.yaml .
+```
+
+The output shows each fix that would be applied, including the file path, line number, and replacement text. No files are modified.
+
+<Tip>
+Always preview fixes with `--dryrun` before applying them to a large codebase. Some fix patterns may match code you did not intend to change.
+</Tip>
+
+## What autofix can and cannot do
+
+### What autofix handles well
+
+- **Simple substitutions**: replacing one function call with another.
+- **Metavariable interpolation**: reusing captured code fragments in the fix.
+- **Regex replacements**: applying regex substitutions to matched text.
+- **Multi-line fixes**: fix patterns can span multiple lines using YAML block scalars.
+- **Indentation**: Semgrep aligns non-first lines of a fix to the indentation of the match location.
+
+### Limitations
+
+- Autofix does not perform type inference or semantic analysis beyond pattern matching. A fix that looks syntactically correct may not be semantically equivalent.
+- Fixes that produce syntactically invalid code are rejected automatically. Semgrep validates the result by re-parsing the fixed file; if parse failures increase, the fix is not applied.
+- Overlapping fixes on the same region are skipped — Semgrep will not apply conflicting fixes in a single run.
+- `fix-regex` cannot reference metavariables from the pattern; it only applies regex substitution to the raw matched text.
+
+## Testing fixes
+
+To test that your fix produces the expected output, use the `--test` flag with fix test annotations in your test file.
+
+Create a test file and add `# fix:` comments below matched lines to declare the expected output after the fix is applied:
+
+```python test_use_is_none.py
+# ruleid: use-is-none
+if result == None:
+    pass
+# fix: if result is None:
+```
+
+Run the test:
+
+```bash
+semgrep --test --config use-is-none.yaml .
+```
+
+Semgrep applies the fix to the matched line and compares the result to the `# fix:` annotation. The test fails if the output does not match.
+
+## Real example: migrate from a deprecated API
+
+This example migrates code from the deprecated `List.map` to `List_.map` (a pattern from the Semgrep codebase itself, where `List_.map` is a stack-safe alternative):
+
+```yaml migrate-list-map.yaml
+rules:
+  - id: no-list-map
+    pattern: List.map
+    fix: List_.map
+    message: |
+      `List.map` creates O(N) stack depth and can lead to a stack overflow.
+      Use `List_.map` instead.
+    languages: [ocaml]
+    severity: ERROR
+```
+
+Applied across a codebase:
+
+```bash
+semgrep scan --autofix --config migrate-list-map.yaml src/
+```
+
+Every occurrence of `List.map` in the `src/` directory is replaced with `List_.map` in a single pass.
+
+### Multi-function migration
+
+To migrate multiple deprecated functions at once, use separate rules in the same file:
+
+```yaml migrate-list-functions.yaml
+rules:
+  - id: no-list-map
+    pattern: List.map
+    fix: List_.map
+    message: Use `List_.map` instead of `List.map`.
+    languages: [ocaml]
+    severity: ERROR
+
+  - id: no-list-filter-map
+    pattern: List.filter_map
+    fix: List_.filter_map
+    message: Use `List_.filter_map` instead of `List.filter_map`.
+    languages: [ocaml]
+    severity: ERROR
+
+  - id: no-list-fold-right
+    pattern: List.fold_right
+    fix: List_.fold_right
+    message: Use `List_.fold_right` instead of `List.fold_right`.
+    languages: [ocaml]
+    severity: ERROR
+```
+
+Run all migrations at once:
+
+```bash
+semgrep scan --autofix --config migrate-list-functions.yaml src/
+```
+
+### Python: replace `sys.exit(1)` with `sys.exit(2)`
+
+This rule (from the Semgrep codebase) enforces that exit code 1 is reserved for blocking findings:
+
+```yaml exit-code.yaml
+rules:
+  - id: no-exit-code-1
+    pattern: sys.exit(1)
+    fix: sys.exit(2)
+    message: |
+      Exit code 1 is reserved for blocking findings. Use exit code 2 for
+      generic fatal errors.
+    languages: [python]
+    severity: ERROR
+    paths:
+      include:
+        - cli/*
+```
+
+## AST-based vs. basic fix
+
+Semgrep uses two fix strategies:
+
+**AST-based fix** (preferred): The fix string is parsed as a code pattern. Metavariables are replaced with the AST nodes they captured. The resulting AST is printed back to text. This strategy produces syntactically correct output and handles edge cases like keyword argument reordering in Python. If the fix pattern fails to parse or the resulting AST is invalid, Semgrep falls back to the basic strategy.
+
+**Basic fix**: The fix string is treated as a template. Metavariables are replaced with the original source text of what they matched. This is simpler but does not perform any AST-level validation.
+
+In practice you do not need to choose between them — Semgrep selects automatically, preferring the AST-based approach.

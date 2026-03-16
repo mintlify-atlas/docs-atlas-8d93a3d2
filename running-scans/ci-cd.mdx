@@ -1,0 +1,194 @@
+---
+title: "Running in CI/CD"
+description: "Use semgrep ci to integrate Semgrep into your CI/CD pipeline and report findings to Semgrep AppSec Platform."
+keywords: ["semgrep ci", "CI", "continuous integration", "diff-aware", "SEMGREP_APP_TOKEN", "blocking findings"]
+---
+
+## The `semgrep ci` command
+
+`semgrep ci` is designed for CI/CD environments. It differs from `semgrep scan` in several important ways:
+
+- Fetches rules from Semgrep AppSec Platform based on your deployment's policy, rather than requiring you to specify `--config`
+- Uploads findings to Semgrep AppSec Platform so you can track, triage, and manage them
+- Automatically performs **diff-aware scanning** on pull requests and merge requests, scanning only changed files
+- Classifies findings as **blocking** or **non-blocking** based on your policy, and exits with code `1` only when blocking findings are present
+
+For local development scans where you don't need app integration, use [`semgrep scan`](/running-scans/local-scan) instead.
+
+## Authentication
+
+`semgrep ci` requires a valid API token to communicate with Semgrep AppSec Platform.
+
+<Steps>
+  <Step title="Generate a token">
+    Log in to [semgrep.dev](https://semgrep.dev) and navigate to **Settings > Tokens** to create a CI token.
+  </Step>
+  <Step title="Set the environment variable">
+    Set `SEMGREP_APP_TOKEN` in your CI environment:
+
+    ```bash
+    export SEMGREP_APP_TOKEN=your_token_here
+    ```
+
+    In most CI systems you add this as a secret or masked environment variable. See [Integrations](/integrations/github-actions) for platform-specific guides.
+  </Step>
+  <Step title="Run the scan">
+    ```bash
+    semgrep ci
+    ```
+
+    Semgrep connects to the platform, retrieves your configured rules, scans your code, and uploads the results.
+  </Step>
+</Steps>
+
+<Warning>
+Never hardcode `SEMGREP_APP_TOKEN` in your source code or CI configuration file. Use your CI system's secret or masked variable mechanism.
+</Warning>
+
+## Diff-aware scanning
+
+When `semgrep ci` detects that it is running in a pull request or merge request context, it automatically limits scanning to files changed relative to the merge base. This keeps scan times fast for large repositories.
+
+Semgrep determines the diff base from environment variables set by the CI platform (see [Environment variables](#environment-variables) below). You can also set it explicitly:
+
+```bash
+semgrep ci --baseline-commit=main
+```
+
+Diff-aware scanning is only active for PR/MR events. Full scans run on pushes to the default branch.
+
+## Blocking vs. non-blocking findings
+
+Each rule in Semgrep AppSec Platform has a **mode** that controls whether findings from that rule block your CI pipeline:
+
+| Mode | Behavior |
+|------|----------|
+| **Block** | Finding causes `semgrep ci` to exit with code `1` |
+| **Comment** | Finding is posted as a code review comment; does not block |
+| **Monitor** | Finding is recorded in the platform; does not block |
+
+The exit code reflects only blocking findings:
+
+```
+# Exits 0 — no blocking findings
+$ semgrep ci
+
+# Exits 1 — one or more blocking findings
+$ semgrep ci
+```
+
+<Note>
+Audit mode overrides the exit code. When running in an event type listed in `--audit-on`, Semgrep exits with `0` even if blocking findings are present.
+</Note>
+
+## Running without authentication
+
+You can run `semgrep ci` without a token by explicitly providing a `--config`:
+
+```bash
+semgrep ci --config=p/python
+```
+
+In this mode, results are not uploaded to the platform and all findings are treated as blocking (exit code follows `semgrep scan` behavior).
+
+<Note>
+You cannot pass both `--config` and a valid `SEMGREP_APP_TOKEN` at the same time. When logged in, all rules must come from the platform.
+</Note>
+
+## Common CI configuration patterns
+
+<CodeGroup>
+
+```yaml GitHub Actions
+name: Semgrep
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for diff-aware scanning
+      - run: semgrep ci
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+```
+
+```yaml GitLab CI
+semgrep:
+  image: semgrep/semgrep
+  script:
+    - semgrep ci
+  variables:
+    SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+```
+
+```yaml CircleCI
+version: 2.1
+orbs:
+  semgrep: semgrep/semgrep@1
+jobs:
+  scan:
+    docker:
+      - image: semgrep/semgrep
+    steps:
+      - checkout
+      - run:
+          name: Run Semgrep
+          command: semgrep ci
+          environment:
+            SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+```
+
+</CodeGroup>
+
+## Environment variables
+
+Semgrep reads these environment variables to enrich findings with repository context. Most are detected automatically from the CI environment, but you can override them if needed.
+
+| Variable | Description |
+|----------|-------------|
+| `SEMGREP_APP_TOKEN` | API token for authenticating with Semgrep AppSec Platform (required) |
+| `SEMGREP_REPO_NAME` | Repository name in `owner/repo` format (e.g., `acme/myapp`) |
+| `SEMGREP_BRANCH` | Branch being scanned |
+| `SEMGREP_COMMIT` | Commit SHA being scanned |
+| `SEMGREP_JOB_URL` | URL to the CI job, included in finding links |
+| `SEMGREP_PR_ID` | Pull/merge request ID; enables diff-aware scanning |
+| `SEMGREP_BASELINE_COMMIT` | Explicit baseline commit for diff-aware scanning |
+| `SEMGREP_TIMEOUT` | Per-file analysis timeout in seconds (default: `5`) |
+| `SEMGREP_SUPPRESS_ERRORS` | Set to `true` to exit `0` on internal errors |
+
+## Reporting results to Semgrep AppSec Platform
+
+After a scan completes, `semgrep ci` sends findings to the platform where you can:
+
+- View all findings across repositories in one place
+- Triage findings (fix, ignore, or assign)
+- Track trends over time
+- Configure rules and policies per repository or organization
+
+The URL to view your results is printed at the end of each CI scan:
+
+```
+View results in Semgrep Cloud Platform:
+  https://semgrep.dev/orgs/your-org/findings?repo=your-repo&ref=main
+```
+
+## Dry run mode
+
+Use `--dry-run` to run the full scan without uploading results to the platform:
+
+```bash
+semgrep ci --dry-run
+```
+
+This is useful for testing your CI configuration or previewing scan results before enabling reporting.

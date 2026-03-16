@@ -1,0 +1,185 @@
+---
+title: 'Development setup'
+description: 'Set up your local environment to build and test Semgrep from source.'
+keywords: ['development', 'build', 'OCaml', 'opam', 'uv', 'Nix', 'setup']
+---
+
+Semgrep has two major components built with different toolchains: an OCaml core engine (`src/`) and a Python CLI (`cli/`). This guide covers both.
+
+## System requirements
+
+<Tabs>
+  <Tab title="Nix (recommended)">
+    - [Nix](https://nixos.org/download/) with flakes enabled
+    - [direnv](https://direnv.net/)
+
+    The Nix shell provides all other dependencies automatically.
+  </Tab>
+  <Tab title="Standard">
+    - **OCaml 5.3.0** via [opam](https://opam.ocaml.org/)
+    - **Dune** build system (installed via opam)
+    - **Python 3.10+**
+    - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** — Python dependency manager
+    - **pre-commit**
+    - **gcc** or **clang** and standard C toolchain
+    - **git**, **make**, **bash**
+  </Tab>
+</Tabs>
+
+## Initial setup
+
+<CodeGroup>
+
+```bash Nix-based setup (recommended)
+# Allow direnv to load the Nix environment
+direnv allow
+
+# Build the full project (Nix provides all dependencies)
+make all
+```
+
+```bash Standard setup
+# Install OCaml dependencies and build Tree-sitter runtime
+# Run this only once, or when dependencies change
+make setup
+
+# Set up pre-commit hooks
+pre-commit install
+
+# Build OCaml core + Python CLI
+make all
+
+# Install the CLI wrapper in editable mode
+make install
+```
+
+</CodeGroup>
+
+<Note>
+  **Never invoke `dune` directly** for building or testing. Always use the Makefile targets. The Makefiles handle path resolution for the monorepo layout. Direct `dune` usage is only appropriate for generating OCaml documentation (`dune build @doc`).
+</Note>
+
+## Common development commands
+
+### Building
+
+| Command | Description |
+|---------|-------------|
+| `make core` | Fast build of `semgrep-core` — use this during active development |
+| `make all` | Full build including Python CLI setup |
+| `make copy-core-for-cli` | Copy freshly-built OCaml binaries to the CLI directory |
+| `make install` | Install the CLI wrapper in editable mode via `uv` |
+
+### Testing
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run OCaml core tests |
+| `make test-all` | Run all tests including Python CLI tests |
+| `make -C cli test` | Run Python CLI tests only |
+| `make build-core-test && ./test -s '<filter>'` | Run specific OCaml tests matching a filter string |
+
+## Working on OCaml code
+
+OCaml source lives under `src/`. After making changes:
+
+<Steps>
+  <Step title="Rebuild the OCaml binaries">
+    ```bash
+    make core
+    ```
+  </Step>
+
+  <Step title="Run tests">
+    ```bash
+    make test
+    ```
+  </Step>
+
+  <Step title="Update CLI binaries if needed">
+    If you are testing changes through the Python CLI, copy the new binaries:
+
+    ```bash
+    make copy-core-for-cli
+    ```
+  </Step>
+</Steps>
+
+To run a specific subset of OCaml tests, build the test executable and pass a filter:
+
+```bash
+make build-core-test && ./test -s 'Tainting'
+```
+
+## Working on Python CLI code
+
+Python source lives under `cli/src/semgrep/`. Changes take effect immediately when running via `uv`:
+
+```bash
+cd cli && uv run semgrep scan --config auto .
+```
+
+Run the Python test suite:
+
+```bash
+make -C cli test
+```
+
+## Debugging
+
+### Verbose logging
+
+Enable verbose output for any scan by passing `-debug`:
+
+```bash
+semgrep-core -debug -lang python myfile.py
+```
+
+### Inspecting AST representations
+
+Use the `semgrep-core` debug flags to inspect intermediate representations:
+
+```bash
+# Raw Tree-sitter CST
+semgrep-core -dump_tree_sitter_cst -lang python myfile.py
+
+# Generic AST (after parsing)
+semgrep-core -dump-named-ast -lang python myfile.py
+
+# IL (Intermediate Language)
+semgrep-core -dump-il -lang python myfile.py
+
+# Control-flow graph
+semgrep-core -cfg_il -lang python myfile.py
+```
+
+### Debugging with LLDB
+
+<Warning>
+  Binaries built on Apple Silicon (M1/M2/M3) do not include debug symbols. If you need to set breakpoints and step through OCaml source, debug on Linux using Docker or a Linux VM.
+</Warning>
+
+OCaml function names are mangled in compiled binaries. Use regular expression breakpoints:
+
+```bash
+# Break on any function in Core_scan
+breakpoint set -r "camlCore_scan.*"
+
+# Break on a specific function
+breakpoint set -r "camlMatching.*match_rules"
+
+# Discover available function names
+image lookup -rn "camlTainting"
+```
+
+### Generating OCaml documentation
+
+```bash
+# Public API docs
+dune build @doc
+
+# Include module internals
+dune build @doc-private
+```
+
+Output is written to `_build/default/_doc/_html`.

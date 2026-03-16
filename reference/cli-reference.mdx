@@ -1,0 +1,490 @@
+---
+title: 'CLI reference'
+description: 'Complete reference for all Semgrep CLI commands and flags.'
+keywords: ['cli', 'command line', 'flags', 'options', 'semgrep scan', 'semgrep ci']
+---
+
+Semgrep is invoked as `semgrep <command> [options] [targets]`. This page documents all commands and their flags.
+
+## semgrep scan
+
+The primary command for running static analysis scans locally.
+
+```bash
+semgrep scan [OPTIONS] [TARGETS]...
+```
+
+`TARGETS` is one or more file or directory paths to scan. If omitted, Semgrep scans the current directory.
+
+### Configuration options
+
+<Note>
+`--config` and `--pattern` are mutually exclusive.
+</Note>
+
+<ParamField path="--config" type="string" placeholder="-c, -f">
+  Rule configuration to use. Accepts a file path, directory, URL, registry identifier (e.g. `p/python`), or `auto` to select rules automatically based on project language.
+
+  Can be specified multiple times to load rules from multiple sources. Environment variable: `SEMGREP_RULES`.
+</ParamField>
+
+<ParamField path="--pattern" type="string" placeholder="-e">
+  Inline pattern to search for. Must be used with `--lang`.
+</ParamField>
+
+<ParamField path="--lang" type="string" placeholder="-l">
+  Language for the `--pattern` flag (e.g. `python`, `javascript`, `go`).
+</ParamField>
+
+### Path options
+
+<ParamField path="--include" type="string">
+  Restrict scanning to files matching this glob pattern. Can be specified multiple times.
+</ParamField>
+
+<ParamField path="--exclude" type="string">
+  Skip files matching this glob pattern. Can be specified multiple times.
+</ParamField>
+
+<ParamField path="--exclude-rule" type="string">
+  Skip rules with this rule ID. Can be specified multiple times.
+</ParamField>
+
+<ParamField path="--max-target-bytes" type="string" default="1000000">
+  Maximum size of a file to scan. Files larger than this limit are skipped. Default is `1000000` (1 MB). Accepts byte size strings like `10MB`.
+</ParamField>
+
+<ParamField path="--use-git-ignore / --no-git-ignore" type="boolean" default="true">
+  Respect `.gitignore` files when selecting targets. Enabled by default.
+</ParamField>
+
+<ParamField path="--scan-unknown-extensions / --skip-unknown-extensions" type="boolean" default="false">
+  Scan files with unrecognized extensions. Disabled by default.
+</ParamField>
+
+<ParamField path="--project-root" type="string">
+  Force a specific directory to be treated as the project root. Affects `.semgrepignore` resolution.
+</ParamField>
+
+<ParamField path="--novcs" type="boolean">
+  Treat the scan target as a non-VCS project, ignoring git-based targeting logic.
+</ParamField>
+
+### Performance and memory options
+
+<ParamField path="--jobs" type="integer" placeholder="-j">
+  Number of parallel jobs to use. Defaults to the number of available CPU cores.
+</ParamField>
+
+<ParamField path="--timeout" type="integer" default="5">
+  Maximum time (in seconds) Semgrep spends matching patterns on a single file. Set to `0` for no limit. Environment variable: `SEMGREP_TIMEOUT`.
+</ParamField>
+
+<ParamField path="--timeout-threshold" type="integer" default="3">
+  Number of rules that may time out on a single file before that file is skipped entirely.
+</ParamField>
+
+<ParamField path="--max-memory" type="integer">
+  Maximum memory (in MiB) the Semgrep engine may use. Set to `0` for no limit.
+</ParamField>
+
+<ParamField path="--interfile-timeout" type="integer">
+  Maximum time (in seconds) for cross-file (interfile) analysis. Set to `0` for no limit.
+</ParamField>
+
+<ParamField path="--optimizations" type="string" default="all">
+  Control engine optimizations. Accepts `all` or `none`.
+</ParamField>
+
+<ParamField path="--enable-version-check / --disable-version-check" type="boolean" default="true">
+  Check for a newer version of Semgrep at the end of each scan. Environment variable: `SEMGREP_ENABLE_VERSION_CHECK`.
+</ParamField>
+
+### Output options
+
+<ParamField path="--output" type="string" placeholder="-o">
+  Write primary output to a file instead of stdout.
+</ParamField>
+
+<ParamField path="--severity" type="string">
+  Report only findings at or above this severity. Accepts `INFO`, `WARNING`, or `ERROR`. Can be specified multiple times.
+</ParamField>
+
+<ParamField path="--rewrite-rule-ids / --no-rewrite-rule-ids" type="boolean" default="true">
+  Prefix rule IDs with the path of the config file they came from, to avoid collisions when loading rules from multiple sources.
+</ParamField>
+
+<ParamField path="--max-lines-per-finding" type="integer" default="10">
+  Maximum number of lines to display per finding in text output.
+</ParamField>
+
+<ParamField path="--max-chars-per-line" type="integer" default="160">
+  Maximum number of characters to display per line in text output.
+</ParamField>
+
+<ParamField path="--max-log-list-entries" type="integer" default="100">
+  Maximum number of rules or targets to show in log summaries. Entries beyond this limit are truncated.
+</ParamField>
+
+<ParamField path="--dataflow-traces" type="boolean">
+  Include dataflow trace information in findings (taint analysis paths). Enabled automatically when using the Pro engine.
+</ParamField>
+
+<ParamField path="--time / --no-time" type="boolean" default="false">
+  Include per-rule and per-file timing data in JSON output.
+</ParamField>
+
+<ParamField path="--matching-explanations" type="boolean" default="false">
+  Include detailed matching explanations in output. Useful for debugging rules.
+</ParamField>
+
+<ParamField path="--enable-nosem / --disable-nosem" type="boolean" default="true">
+  Honor `# nosem` and `# nosemgrep` inline suppression comments.
+</ParamField>
+
+<ParamField path="--force-color / --no-force-color" type="boolean">
+  Force or disable ANSI color output regardless of terminal capabilities.
+</ParamField>
+
+### Output formats
+
+These flags are mutually exclusive. The default format is `--text`.
+
+<ParamField path="--text" type="boolean">
+  Human-readable text output (default).
+</ParamField>
+
+<ParamField path="--json" type="boolean">
+  JSON output.
+</ParamField>
+
+<ParamField path="--sarif" type="boolean">
+  SARIF 2.1.0 output. Suitable for GitHub Code Scanning and other SARIF-compatible platforms.
+</ParamField>
+
+<ParamField path="--gitlab-sast" type="boolean">
+  GitLab SAST report format.
+</ParamField>
+
+<ParamField path="--gitlab-secrets" type="boolean">
+  GitLab Secrets detection report format.
+</ParamField>
+
+<ParamField path="--junit-xml" type="boolean">
+  JUnit XML report format.
+</ParamField>
+
+<ParamField path="--emacs" type="boolean">
+  Emacs-compatible output format.
+</ParamField>
+
+<ParamField path="--vim" type="boolean">
+  Vim quickfix output format.
+</ParamField>
+
+### Write additional outputs to files
+
+These options write a specific format to a file in addition to the primary output. Each accepts a file path and can be specified multiple times.
+
+| Flag | Format |
+|------|--------|
+| `--json-output FILE` | JSON |
+| `--sarif-output FILE` | SARIF |
+| `--gitlab-sast-output FILE` | GitLab SAST |
+| `--gitlab-secrets-output FILE` | GitLab Secrets |
+| `--junit-xml-output FILE` | JUnit XML |
+| `--text-output FILE` | Text |
+| `--emacs-output FILE` | Emacs |
+| `--vim-output FILE` | Vim |
+
+### Autofix options
+
+<ParamField path="--autofix / --no-autofix" type="boolean" placeholder="-a">
+  Apply fixes defined in rules via the `fix` key. Modifies files in-place.
+</ParamField>
+
+<ParamField path="--dryrun / --no-dryrun" type="boolean" default="false">
+  Preview autofix changes without writing them to disk. Implies `--autofix` for reporting purposes.
+</ParamField>
+
+### Alternate modes
+
+<ParamField path="--validate" type="boolean" default="false">
+  Validate rules specified by `--config` without running a scan.
+</ParamField>
+
+<ParamField path="--test" type="boolean" default="false">
+  Run rule tests. Expects test annotation comments in source files.
+</ParamField>
+
+<ParamField path="--test-ignore-todo / --no-test-ignore-todo" type="boolean" default="false">
+  When running `--test`, ignore `todoruleid` and `todook` annotations.
+</ParamField>
+
+<ParamField path="--version" type="boolean">
+  Print the Semgrep version and exit.
+</ParamField>
+
+### Verbosity options
+
+These flags are mutually exclusive.
+
+<ParamField path="--quiet" type="boolean" placeholder="-q">
+  Suppress all output except findings.
+</ParamField>
+
+<ParamField path="--verbose" type="boolean" placeholder="-v">
+  Show additional information about rules loaded and files scanned.
+</ParamField>
+
+<ParamField path="--debug" type="boolean">
+  Show all debug information including core engine output.
+</ParamField>
+
+### Error handling
+
+<ParamField path="--error / --no-error" type="boolean">
+  Exit with a non-zero code if any findings are reported (exit code 1). By default, findings produce exit code 1 only in `semgrep ci`.
+</ParamField>
+
+<ParamField path="--strict / --no-strict" type="boolean" default="false">
+  Return a non-zero exit code if any warnings are encountered (e.g. unused `--include` patterns).
+</ParamField>
+
+### Semgrep Pro Engine options
+
+<Note>
+Semgrep Pro Engine features require installation via `semgrep install-semgrep-pro` and a Semgrep account.
+</Note>
+
+<ParamField path="--pro" type="boolean">
+  Enable the Pro engine with cross-file (interfile) analysis.
+</ParamField>
+
+<ParamField path="--pro-intrafile" type="boolean">
+  Enable the Pro engine with intrafile analysis only.
+</ParamField>
+
+<ParamField path="--pro-languages" type="boolean">
+  Enable Pro language extensions only (improved parsers and language support).
+</ParamField>
+
+<ParamField path="--oss-only" type="boolean">
+  Force use of the OSS (open-source) engine even when Pro is installed.
+</ParamField>
+
+<ParamField path="--pro-path-sensitive" type="boolean" default="false">
+  Enable path-sensitive analysis in the Pro engine.
+</ParamField>
+
+<ParamField path="--secrets" type="boolean">
+  Enable Semgrep Secrets scanning (requires Pro engine).
+</ParamField>
+
+<ParamField path="--historical-secrets" type="boolean">
+  Scan git history for secrets (requires Secrets and Pro engine).
+</ParamField>
+
+<ParamField path="--allow-untrusted-validators" type="boolean">
+  Run secret validators from community rules, not just Semgrep-verified ones.
+</ParamField>
+
+<ParamField path="--secrets-timeout" type="integer">
+  Maximum time (in seconds) for secrets validation network requests.
+</ParamField>
+
+### Metrics
+
+<ParamField path="--metrics" type="string" default="auto">
+  Control telemetry data sent to Semgrep. Accepts `auto` (send metrics unless `--config` is used with a local file), `on`, or `off`. Environment variable: `SEMGREP_SEND_METRICS`.
+</ParamField>
+
+### Diff scanning
+
+<ParamField path="--baseline-commit" type="string">
+  Only report findings introduced since this git commit. Accepts a commit SHA or branch name. Environment variables: `SEMGREP_BASELINE_COMMIT`, `SEMGREP_BASELINE_REF`.
+</ParamField>
+
+### Tracing
+
+<ParamField path="--trace / --no-trace" type="boolean" default="false">
+  Enable OpenTelemetry tracing.
+</ParamField>
+
+<ParamField path="--trace-endpoint" type="string">
+  OpenTelemetry collector endpoint URL. Environment variable: `SEMGREP_OTEL_ENDPOINT`.
+</ParamField>
+
+---
+
+## semgrep ci
+
+Run a scan optimized for CI/CD environments. Uploads findings to Semgrep AppSec Platform when authenticated.
+
+```bash
+semgrep ci [OPTIONS]
+```
+
+`semgrep ci` inherits all flags from `semgrep scan`. Additional flags:
+
+<ParamField path="--config" type="string" placeholder="-c, -f">
+  Override rules fetched from Semgrep AppSec Platform. Cannot be combined with a logged-in session.
+</ParamField>
+
+<ParamField path="--dry-run" type="boolean" default="false">
+  Run the scan without uploading findings to Semgrep AppSec Platform.
+</ParamField>
+
+<ParamField path="--supply-chain" type="boolean">
+  Enable Software Composition Analysis (SCA) for dependency scanning.
+</ParamField>
+
+<ParamField path="--secrets" type="boolean">
+  Enable Semgrep Secrets scanning.
+</ParamField>
+
+<ParamField path="--suppress-errors / --no-suppress-errors" type="boolean" default="true">
+  Suppress non-fatal errors and exit with code 0 on infrastructure failures. Useful to avoid blocking CI pipelines on Semgrep outages. Environment variable: `SEMGREP_SUPPRESS_ERRORS`.
+</ParamField>
+
+<ParamField path="--subdir" type="string">
+  Scan only a subdirectory of the repository. Useful for monorepos.
+</ParamField>
+
+<Warning>
+`semgrep ci` requires either a valid `SEMGREP_APP_TOKEN` environment variable or an explicit `--config` flag when not logged in.
+</Warning>
+
+---
+
+## semgrep login
+
+Authenticate with Semgrep AppSec Platform.
+
+```bash
+semgrep login [OPTIONS]
+```
+
+Opens a browser window to complete authentication. On success, saves the API token to the local settings file. You can also set `SEMGREP_APP_TOKEN` directly to skip interactive login.
+
+<ParamField path="--force" type="boolean">
+  Ignore any existing saved token and force a new browser-based login.
+</ParamField>
+
+<ParamField path="--override-tty" type="boolean">
+  Allow login from a non-interactive terminal. Used by agents and MCP server integrations.
+</ParamField>
+
+---
+
+## semgrep logout
+
+Remove saved authentication credentials.
+
+```bash
+semgrep logout
+```
+
+Deletes the stored API token from the local settings file.
+
+---
+
+## semgrep publish
+
+Upload a rule to Semgrep AppSec Platform.
+
+```bash
+semgrep publish [OPTIONS] TARGET
+```
+
+`TARGET` is the path to a rule file or directory containing rules.
+
+<ParamField path="--visibility" type="string" default="org_private">
+  Visibility of the uploaded rule. Accepts:
+  - `org_private` — visible only to your organization (default)
+  - `unlisted` — visible to your organization; accessible by URL to others
+  - `public` — published to the Semgrep Registry (requires `--registry-id`)
+</ParamField>
+
+<ParamField path="--registry-id" type="string">
+  Registry path for public rules (e.g. `python.flask.my-new-rule`). Required when `--visibility=public`.
+</ParamField>
+
+<Note>
+`semgrep publish` requires authentication. Run `semgrep login` first.
+</Note>
+
+---
+
+## semgrep mcp
+
+Start the Semgrep Model Context Protocol (MCP) server for AI agent integrations.
+
+```bash
+semgrep mcp [OPTIONS]
+```
+
+<ParamField path="--transport" type="string" default="stdio" placeholder="-t">
+  Transport protocol to use. Accepts `stdio` or `streamable-http`. Environment variable: `MCP_TRANSPORT`.
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8000" placeholder="-p">
+  Port for the HTTP server when using `streamable-http` transport. Environment variable: `SEMGREP_MCP_PORT`.
+</ParamField>
+
+<ParamField path="--hook" type="string" placeholder="-k">
+  Run a specific agent hook instead of starting the server. Options:
+  - `post-tool-cli-scan` — run a Semgrep scan via PostTool hook
+  - `stop-cli-scan` — run a Semgrep scan via Stop hook
+  - `record-file-edit` — record file edits via AfterFileEdit hook
+  - `inject-secure-defaults` — inject secure defaults context
+  - `inject-secure-defaults-short` — inject a shorter secure defaults context
+</ParamField>
+
+<ParamField path="--agent" type="string" default="claude" placeholder="-a">
+  Agent type the MCP server is connecting to. Accepts `claude`, `cursor`, or `windsurf`.
+</ParamField>
+
+---
+
+## semgrep install-semgrep-pro
+
+Download and install the Semgrep Pro Engine binary.
+
+```bash
+semgrep install-semgrep-pro
+```
+
+Requires authentication. The Pro Engine enables cross-file analysis, Semgrep Secrets, and advanced language support.
+
+---
+
+## Global examples
+
+<CodeGroup>
+
+```bash Scan with a registry ruleset
+semgrep scan --config p/python .
+```
+
+```bash Run an inline pattern
+semgrep scan -e 'eval($X)' -l javascript src/
+```
+
+```bash Output as SARIF
+semgrep scan --config p/default --sarif --output results.sarif .
+```
+
+```bash Validate rules
+semgrep scan --validate --config ./rules/
+```
+
+```bash Run tests
+semgrep scan --test --config ./rules/ ./tests/
+```
+
+```bash CI scan (authenticated)
+SEMGREP_APP_TOKEN=<token> semgrep ci
+```
+
+</CodeGroup>

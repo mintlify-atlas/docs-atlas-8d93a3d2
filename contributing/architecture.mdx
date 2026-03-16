@@ -1,0 +1,189 @@
+---
+title: 'Architecture'
+description: 'How Semgrep is structured: the Python CLI, OCaml core engine, and the multi-stage analysis pipeline.'
+keywords: ['architecture', 'OCaml', 'Python', 'AST', 'IL', 'pattern matching', 'pipeline']
+---
+
+Semgrep is a monorepo with two major components that communicate via RPC. Understanding the division of responsibilities helps you know where to look and where to add new code.
+
+## High-level overview
+
+<CardGroup cols={2}>
+  <Card title="Python CLI" icon="python">
+    Handles orchestration, AppSec Platform communication, dependency scanning (SCA), and user-facing output. Lives in `cli/`.
+  </Card>
+  <Card title="OCaml core" icon="gear">
+    Handles parsing, pattern matching, taint analysis, and most program analysis. Lives in `src/`. Built as `semgrep-core`.
+  </Card>
+</CardGroup>
+
+The Python CLI calls into the OCaml engine via RPC (`src/rpc/`). Functionality is incrementally migrated from Python to OCaml through this interface — individual components can be ported in isolation without a full rewrite.
+
+<Note>
+  The `osemgrep` binary is deprecated as a direct entry point. The primary entry point is the Python CLI (`semgrep`), which calls OCaml via RPC. Do not rely on `osemgrep` directly.
+</Note>
+
+## Analysis pipeline
+
+The OCaml core processes code through a four-stage pipeline:
+
+<Steps>
+  <Step title="Parsing">
+    Language-specific parsers (built on Tree-sitter) convert source files into a **Generic AST** — a unified abstract syntax tree that is language-agnostic.
+
+    Relevant directories: `src/parsing/`, `languages/`
+  </Step>
+
+  <Step title="Analysis">
+    The Generic AST is resolved (names, types) and optionally converted to **IL** (Intermediate Language) — a simplified, lower-level representation used for dataflow analysis, taint tracking, and constant propagation.
+
+    Relevant directories: `src/analyzing/`, `src/naming/`, `src/typing/`, `src/il/`
+  </Step>
+
+  <Step title="Matching">
+    Rules are matched against the AST or IL. Pattern matching supports **metavariables** (`$X`, `$FOO`) that bind to code fragments, and **ellipsis operators** (`...`) that match arbitrary sequences.
+
+    Relevant directories: `src/engine/`, `src/matching/`, `src/tainting/`
+  </Step>
+
+  <Step title="Reporting">
+    Results are filtered, ranked, and formatted. Output can be JSON, SARIF, or human-readable text. Autofix suggestions are generated here as well.
+
+    Relevant directories: `src/reporting/`, `src/fixing/`
+  </Step>
+</Steps>
+
+## Key concepts
+
+### Generic AST
+
+All supported languages are parsed into a single unified AST defined in `src/ast_generic/`. This is what makes language-agnostic pattern matching possible: a rule written for Python can often match equivalent constructs in JavaScript or Go without modification.
+
+### IL (Intermediate Language)
+
+Defined in `src/il/`, IL is a simplified representation derived from the Generic AST. It normalizes control flow and data flow, making it easier to implement analyses like taint tracking and constant propagation without handling every language-specific AST variant.
+
+### Pattern matching
+
+Semgrep's pattern matching (`src/engine/`, `src/matching/`) is semantic rather than textual. Metavariables bind to code fragments and can be reused across a pattern, and ellipsis operators match sequences of zero or more elements.
+
+```yaml Example rule using metavariables and ellipsis
+rules:
+  - id: unsafe-exec
+    pattern: exec($CMD, ...)
+    message: Potential command injection via $CMD
+    languages: [python]
+    severity: ERROR
+```
+
+## Directory layout
+
+### Analysis core
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/ast_generic/` | Generic AST with visitors and mappers for traversal |
+| `src/il/` | Intermediate Language representation |
+| `src/analyzing/` | AST-to-IL transformation, dataflow, control-flow, constant propagation |
+| `src/naming/` | Name resolution with scope management and symbol binding |
+| `src/typing/` | Type inference and checking |
+
+### Pattern matching and engine
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/engine/` | Core pattern matching with rule orchestration and metavariable unification |
+| `src/matching/` | Pattern matching utilities and language-specific adaptations |
+| `src/tainting/` | Taint analysis and tracking |
+
+### Language support
+
+| Directory | Purpose |
+|-----------|---------|
+| `languages/` | Language parser packages |
+| `src/parsing/` | Language parsers with Tree-sitter integration |
+| `src/spacegrep/` | Language-agnostic whitespace-aware pattern matching |
+| `src/aliengrep/` | Regular expression-based code search |
+
+### Rules and configuration
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/rule/` | Rule parsing and multi-layer transformation (YAML → `Rule.t` → `Mini_rule.t`) |
+| `src/configuring/` | Configuration for project settings, rules, and path filtering |
+| `src/prefiltering/` | Performance optimization by filtering files/rules before analysis |
+| `src/metachecking/` | Rule quality validation and improvement suggestions |
+
+### Scanning and execution
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/core_scan/` | Scanning orchestration with parallel execution |
+| `src/targeting/` | Target file selection with language detection |
+| `src/target/` | Target representation (file and in-memory) |
+| `src/osemgrep/` | OCaml CLI implementation (deprecated as direct entry point; used via RPC) |
+
+### Output and reporting
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/reporting/` | Result reporting (JSON, SARIF, text) |
+| `src/fixing/` | Autofix capabilities for code rewriting |
+
+### Additional features
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/sca/` | Software Composition Analysis for dependency scanning |
+| `src/rpc/` | RPC interface for Python ↔ OCaml communication |
+| `src/lsp_legacy/` | Legacy LSP implementation |
+
+### Foundation and testing
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/core/`, `src/core_cli/` | Foundation libraries: utilities, file system operations, logging |
+| `src/printing/` | Pretty printing for AST, IL, and error messages |
+| `src/tests/` | Test cases |
+
+## OCaml vs. Python: where to add new code
+
+<Tip>
+  Default to OCaml for new functionality. This keeps the performance-sensitive core in one language and avoids duplicating logic.
+</Tip>
+
+| Situation | Preferred language |
+|-----------|--------------------|
+| Parsing, program analysis, pattern matching | OCaml |
+| Performance-sensitive computation | OCaml |
+| Code you expect to refactor heavily | OCaml |
+| Interaction with a third-party SDK or external service | Python |
+| Code that must closely interact with existing Python code | Python |
+
+Do not duplicate logic across both languages. Implement in one language and expose it via the RPC interface if the other side needs it.
+
+## Testing framework
+
+Semgrep uses inline test annotations in target source files to declare expected results:
+
+| Annotation | Meaning |
+|------------|---------|
+| `ruleid: rule-name` | A finding is expected on this line |
+| `todoruleid: rule-name` | A finding is expected but the analyzer does not yet report it (known false negative) |
+| `ok: rule-name` | No finding should be reported on this line |
+| `todook: rule-name` | A spurious finding is reported here but should not be (known false positive) |
+
+```python Example annotated test file
+def get_user_input():
+    return input()  # ok: injection-rule
+
+def run_query(query):
+    execute(query)  # ruleid: injection-rule
+```
+
+When a test fails:
+
+- **"N false negatives"** — findings expected by `ruleid` annotations are missing, or `todoruleid` lines are unexpectedly passing.
+- **"N false positives"** — findings are reported on `ok:` lines or on unannotated lines.
+
+To fix a known false negative, update the analyzer so it reports the finding and change `todoruleid` to `ruleid`. To fix a known false positive, update the analyzer to suppress the spurious finding and change `todook` to `ok`.

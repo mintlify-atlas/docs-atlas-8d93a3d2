@@ -1,0 +1,287 @@
+---
+title: "Taint analysis"
+description: "Track untrusted data as it flows through your code from sources to sinks using Semgrep taint mode."
+keywords: ["taint analysis", "dataflow", "sources", "sinks", "sanitizers", "propagators", "sql injection", "path traversal"]
+---
+
+Taint analysis tracks how data flows through a program. You define **sources** (where untrusted data enters), **sinks** (dangerous functions the data should not reach), and optionally **sanitizers** (functions that make data safe). Semgrep then reports a finding any time tainted data reaches a sink without being sanitized.
+
+This is more powerful than pattern matching alone because it catches vulnerabilities that span multiple statements and variable assignments.
+
+<Note>
+Semgrep Community Edition performs intra-file taint analysis. Taint does not cross file or function boundaries in the open-source engine. For cross-file and cross-function taint tracking, the Semgrep AppSec Platform is required.
+</Note>
+
+## Basic taint mode syntax
+
+Set `mode: taint` on a rule and provide `pattern-sources`, `pattern-sinks`, and optionally `pattern-sanitizers`:
+
+```yaml taint-basic.yaml
+rules:
+  - id: tainted-sql-query
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: |
+      Detected user-controlled data flowing into a SQL query. This can lead
+      to SQL injection. Use parameterized queries instead.
+    pattern-sources:
+      - pattern: request.get_data()
+      - pattern: request.args.get(...)
+      - pattern: request.form.get(...)
+    pattern-sinks:
+      - pattern: $CURSOR.execute(...)
+    pattern-sanitizers:
+      - pattern: sanitize_sql(...)
+```
+
+Semgrep reports a finding when a value from any `pattern-sources` flows into any `pattern-sinks` without passing through a `pattern-sanitizers` pattern.
+
+## Sources
+
+Sources define where tainted data enters. Use `pattern-sources` to list them:
+
+```yaml
+pattern-sources:
+  - pattern: request.get_data()
+  - patterns:
+      - pattern-inside: |
+          def $FUNC($REQ: HttpRequest, ...):
+            ...
+      - pattern: $REQ.body
+```
+
+You can use the full pattern operator syntax inside each source entry, including `patterns`, `pattern-either`, `pattern-inside`, and `metavariable-regex`.
+
+## Sinks
+
+Sinks are dangerous functions or expressions that should not receive tainted data:
+
+```yaml
+pattern-sinks:
+  - pattern: subprocess.run(...)
+  - pattern: os.system(...)
+  - patterns:
+      - pattern-inside: $CURSOR.execute($QUERY)
+      - focus-metavariable: $QUERY
+```
+
+Using `focus-metavariable` inside a sink narrows the finding to report only on the specific argument that is tainted, rather than the entire call expression.
+
+## Sanitizers
+
+Sanitizers are functions or code patterns that clean tainted data:
+
+```yaml
+pattern-sanitizers:
+  - pattern: html.escape(...)
+  - pattern: bleach.clean(...)
+  - pattern: $CURSOR.execute($QUERY, $PARAMS)
+```
+
+The last example uses parameterized execution as a sanitizer: if the code uses `cursor.execute(query, params)` with separate parameters, the data is not injected directly into the query string.
+
+## Propagators
+
+Propagators define how taint spreads through custom functions that transform data without sanitizing it. Use `pattern-propagators` with `from` and `to` fields:
+
+```yaml
+pattern-propagators:
+  - pattern: $TO = transform($FROM)
+    from: $FROM
+    to: $TO
+  - pattern: $OBJ.set($FROM)
+    from: $FROM
+    to: $OBJ
+```
+
+Without a propagator entry, Semgrep does not know that `transform()` passes taint from its input to its return value. With the entry above, if `$FROM` is tainted, `$TO` becomes tainted too.
+
+The `by-side-effect` option controls whether the `to` variable is tainted as a side effect (modifying an existing variable) or only in the return value:
+
+```yaml
+pattern-propagators:
+  - pattern: $OBJ.append($ITEM)
+    from: $ITEM
+    to: $OBJ
+    by-side-effect: true
+```
+
+With `by-side-effect: true`, if `$ITEM` is tainted, the `$OBJ` list itself becomes tainted after the call.
+
+## Taint labels
+
+Taint labels let you distinguish between multiple types of taint and require specific combinations before reporting a finding. Assign a `label` to sources and use `requires` on sinks to express the condition:
+
+```yaml taint-labels.yaml
+rules:
+  - id: unverified-jwt
+    mode: taint
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: |
+      Detected a JWT token used without verification. Call `.verify()` before
+      using the decoded token.
+    pattern-sources:
+      - label: UNVERIFIED_TOKEN
+        pattern: jwt.decode($TOKEN, ...)
+    pattern-sinks:
+      - requires: UNVERIFIED_TOKEN
+        pattern: $SINK
+        patterns:
+          - pattern-not-inside: |
+              jwt.verify($TOKEN, ...)
+              ...
+          - pattern: $TOKEN
+    pattern-sanitizers:
+      - patterns:
+          - pattern-inside: |
+              jwt.verify($TOKEN, ...)
+              ...
+          - pattern: $TOKEN
+```
+
+Labels enable precise multi-step tracking. A sink with `requires: LABEL` only fires when it receives data with that specific label.
+
+## Real example: SQL injection via taint flow
+
+This rule detects user input flowing into a raw SQL query in a Flask or Django application:
+
+```yaml python-taint-sqli.yaml
+rules:
+  - id: python-taint-sql-injection
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: |
+      Detected user-controlled data flowing directly into a SQL query. This
+      can allow an attacker to manipulate your database queries. Use
+      parameterized queries:
+        cursor.execute("SELECT * FROM t WHERE id = %s", (user_id,))
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+          - pattern: request.get_json(...)
+          - pattern: request.values.get(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-inside: $CURSOR.execute($QUERY)
+          - focus-metavariable: $QUERY
+    pattern-sanitizers:
+      - pattern: $CURSOR.execute($QUERY, $PARAMS)
+```
+
+This catches patterns like:
+
+```python
+def get_user(user_id):
+    # ruleid: python-taint-sql-injection
+    query = "SELECT * FROM users WHERE id = " + request.args.get("id")
+    cursor.execute(query)
+
+def safe_get_user(user_id):
+    # ok: python-taint-sql-injection
+    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+```
+
+## Real example: path traversal
+
+This rule detects user input flowing into a file path operation, enabling directory traversal attacks:
+
+```yaml path-traversal.yaml
+rules:
+  - id: path-traversal-open
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: |
+      Detected user-controlled data flowing into a file path. An attacker
+      could use path traversal sequences (e.g. `../`) to access files outside
+      the intended directory. Validate and sanitize file paths, and use
+      `os.path.abspath()` combined with a prefix check.
+    metadata:
+      category: security
+      cwe: "CWE-22: Path Traversal"
+      owasp: "A01:2021 - Broken Access Control"
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+          - pattern: request.json.get(...)
+    pattern-sinks:
+      - pattern-either:
+          - pattern: open($PATH, ...)
+          - pattern: os.open($PATH, ...)
+          - pattern: os.path.join($BASE, $PATH, ...)
+    pattern-sanitizers:
+      - patterns:
+          - pattern: os.path.abspath($PATH)
+          - pattern-inside: |
+              $SAFE = os.path.abspath($PATH)
+              ...
+              if not $SAFE.startswith($BASE):
+                ...
+```
+
+Matches:
+
+```python
+def serve_file():
+    filename = request.args.get("file")
+    # ruleid: path-traversal-open
+    with open(os.path.join("/var/data", filename)) as f:
+        return f.read()
+```
+
+## Go example: command injection
+
+The following rule detects HTTP request fields flowing into `exec.Cmd` in Go:
+
+```yaml go-command-injection.yaml
+rules:
+  - id: go-command-injection
+    mode: taint
+    languages: [go]
+    severity: ERROR
+    message: |
+      Detected HTTP request data flowing into a command execution. This can
+      allow OS command injection. Validate and allowlist all command arguments.
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: ($REQ : http.Request).$FIELD
+              - pattern: ($REQ : *http.Request).$FIELD()
+          - metavariable-regex:
+              metavariable: $FIELD
+              regex: ^(Body|Form|FormValue|PostFormValue|URL|UserAgent)$
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern-inside: exec.Command($CMD, $ARGS)
+              - pattern-inside: syscall.Exec($PATH, $ARGS, ...)
+          - focus-metavariable:
+              - $CMD
+              - $ARGS
+```
+
+## Limitations in Community Edition
+
+Semgrep Community Edition taint analysis is **intra-file only**. This means:
+
+- Taint does not follow function calls across different files.
+- Taint does not propagate across module imports.
+- If a source is passed to a helper function defined in another file, Semgrep CE will not track that flow.
+
+<Warning>
+For security-focused use cases, intra-file taint analysis misses many true positives. Real applications route data through multiple layers (controllers, services, repositories). The Semgrep AppSec Platform adds cross-file and cross-function analysis, reducing false negatives by 250% compared to CE.
+</Warning>
+
+For CE rules, you can work around this limitation by defining sources more broadly (e.g. matching function parameters that are conventionally user input) or by matching at the framework boundary where input enters your application code.

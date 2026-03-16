@@ -1,0 +1,364 @@
+---
+title: "Pattern examples"
+description: "Real-world Semgrep rule examples for security, code quality, and framework-specific patterns."
+keywords: ["semgrep examples", "security rules", "sql injection", "hardcoded credentials", "flask", "django", "code quality"]
+---
+
+The following examples show real Semgrep rules organized by use case. Each example includes the rule YAML, the code it matches, and an explanation of what it detects.
+
+## Ban dangerous APIs
+
+### Detect `exec()` and `eval()` usage
+
+Dynamic code execution functions like `exec` and `eval` can allow arbitrary code execution if called with untrusted input.
+
+```yaml ban-exec-eval.yaml
+rules:
+  - id: ban-exec-eval
+    pattern-either:
+      - pattern: exec(...)
+      - pattern: eval(...)
+    message: |
+      Avoid `exec()` and `eval()`. These functions execute arbitrary code and
+      are dangerous if called with user-controlled input. If you need dynamic
+      behavior, use a safer alternative.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+```
+
+This rule matches:
+
+```python
+# ruleid: ban-exec-eval
+exec(user_input)
+
+# ruleid: ban-exec-eval
+eval(request.GET["expr"])
+```
+
+And does not match:
+
+```python
+# ok: ban-exec-eval
+result = calculate(user_input)
+```
+
+### Detect subprocess calls without shell=False
+
+Running shell commands with `shell=True` passes the command string to the OS shell, enabling shell injection.
+
+```yaml no-shell-true.yaml
+rules:
+  - id: no-shell-true
+    patterns:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+    message: |
+      Detected `shell=True` in a subprocess call. This passes the command to
+      the OS shell and enables shell injection if any argument is
+      user-controlled. Use `shell=False` (the default) with a list of
+      arguments instead.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+```
+
+Matches:
+
+```python
+# ruleid: no-shell-true
+subprocess.run(cmd, shell=True)
+
+# ruleid: no-shell-true
+subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+```
+
+## Hardcoded credentials detection
+
+Hardcoded passwords, API keys, and tokens committed to source control are a common source of credential leaks.
+
+```yaml hardcoded-password.yaml
+rules:
+  - id: hardcoded-password-assignment
+    patterns:
+      - pattern: $VAR = "..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)(password|passwd|secret|api_key|apikey|token|auth)
+    message: |
+      Detected a hardcoded value assigned to `$VAR`. Hardcoded credentials
+      can be leaked via source control or logs. Use environment variables or
+      a secrets manager instead:
+        import os
+        $VAR = os.environ["MY_SECRET"]
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      confidence: MEDIUM
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+```
+
+<Note>
+This rule uses `metavariable-regex` to filter matches to variable names that look like credential names. This reduces false positives compared to matching all string assignments.
+</Note>
+
+## SQL injection detection
+
+### String concatenation into SQL queries
+
+Building SQL queries by concatenating strings with user input is the classic SQL injection pattern.
+
+<Tabs>
+  <Tab title="Python">
+    ```yaml python-sqli.yaml
+    rules:
+      - id: python-string-concat-sqli
+        patterns:
+          - pattern: $CURSOR.execute($QUERY + ...)
+          - pattern-not: $CURSOR.execute($QUERY, ...)
+        message: |
+          Detected string concatenation in a SQL query. This can lead to SQL
+          injection if any concatenated value is user-controlled. Use
+          parameterized queries instead:
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        languages: [python]
+        severity: ERROR
+        metadata:
+          category: security
+          cwe: "CWE-89: SQL Injection"
+          owasp: "A03:2021 - Injection"
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```yaml js-sqli.yaml
+    rules:
+      - id: js-string-concat-sqli
+        patterns:
+          - pattern: $DB.query($QUERY + ...)
+        message: |
+          Detected string concatenation in a SQL query. This can lead to SQL
+          injection. Use parameterized queries instead:
+            db.query("SELECT * FROM users WHERE id = ?", [userId])
+        languages: [javascript, typescript]
+        severity: ERROR
+        metadata:
+          category: security
+          cwe: "CWE-89: SQL Injection"
+          owasp: "A03:2021 - Injection"
+    ```
+  </Tab>
+  <Tab title="Java">
+    ```yaml java-sqli.yaml
+    rules:
+      - id: java-string-concat-sqli
+        patterns:
+          - pattern: $STMT.executeQuery("..." + ...)
+        message: |
+          Detected string concatenation in a SQL query. Use PreparedStatement
+          with parameterized queries instead:
+            PreparedStatement ps = conn.prepareStatement(
+                "SELECT * FROM users WHERE id = ?");
+            ps.setInt(1, userId);
+        languages: [java]
+        severity: ERROR
+        metadata:
+          category: security
+          cwe: "CWE-89: SQL Injection"
+    ```
+  </Tab>
+</Tabs>
+
+## Code quality: common anti-patterns
+
+### Detect equality comparison with `None`
+
+In Python, `x == None` is considered bad style and can produce unexpected results with objects that override `__eq__`. Use `is None` instead.
+
+```yaml none-comparison.yaml
+rules:
+  - id: use-is-none
+    pattern: $X == None
+    fix: $X is None
+    message: |
+      Use `$X is None` instead of `$X == None`. Identity comparison with
+      `is` is the correct way to check for None.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: correctness
+```
+
+This rule also includes a `fix` that automatically rewrites matches. See [Autofix](/writing-rules/autofix) for details.
+
+### Detect mutable default arguments
+
+Mutable default arguments in Python are shared across all calls, which is almost never the intended behavior.
+
+```yaml mutable-defaults.yaml
+rules:
+  - id: mutable-default-argument
+    pattern-either:
+      - pattern: def $FUNC(..., $ARG=[], ...): ...
+      - pattern: def $FUNC(..., $ARG={}, ...): ...
+      - pattern: def $FUNC(..., $ARG=set(), ...): ...
+    message: |
+      Detected a mutable default argument `$ARG`. Mutable defaults are shared
+      across all calls to `$FUNC`. Use `None` as the default and initialize
+      inside the function:
+        def $FUNC(..., $ARG=None, ...):
+            if $ARG is None:
+                $ARG = []
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: correctness
+```
+
+## Framework-specific patterns
+
+### Flask: insecure cookie configuration
+
+Flask session cookies should have `httponly` and `secure` flags set to prevent JavaScript access and transmission over plain HTTP.
+
+```yaml flask-cookie.yaml
+rules:
+  - id: flask-cookie-missing-httponly
+    patterns:
+      - pattern: response.set_cookie(...)
+      - pattern-not: response.set_cookie(..., httponly=True, ...)
+    message: |
+      Detected a Flask cookie set without `httponly=True`. Without this flag,
+      the cookie is accessible via JavaScript, which enables session theft
+      through XSS attacks. Add `httponly=True`:
+        response.set_cookie(name, value, httponly=True, secure=True)
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag"
+      owasp: "A05:2021 - Security Misconfiguration"
+
+  - id: flask-cookie-missing-secure
+    patterns:
+      - pattern: response.set_cookie(...)
+      - pattern-not: response.set_cookie(..., secure=True, ...)
+    message: |
+      Detected a Flask cookie set without `secure=True`. Without this flag,
+      the cookie may be transmitted over plain HTTP. Add `secure=True`:
+        response.set_cookie(name, value, httponly=True, secure=True)
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-614: Sensitive Cookie in HTTPS Session Without 'Secure' Attribute"
+```
+
+Matches:
+
+```python
+# ruleid: flask-cookie-missing-httponly
+response.set_cookie("session", token)
+
+# ruleid: flask-cookie-missing-httponly
+response.set_cookie("session", token, secure=True)
+
+# ok: flask-cookie-missing-httponly
+response.set_cookie("session", token, httponly=True, secure=True)
+```
+
+### Django: debug mode enabled
+
+`DEBUG = True` should never be deployed to production. It exposes stack traces, local variables, and detailed error messages.
+
+```yaml django-debug.yaml
+rules:
+  - id: django-debug-true
+    pattern: DEBUG = True
+    message: |
+      Detected `DEBUG = True` in a Django settings file. Debug mode must be
+      disabled in production. It exposes stack traces and sensitive
+      environment details. Set `DEBUG = False` or read from an environment
+      variable:
+        DEBUG = os.environ.get("DEBUG", "False") == "True"
+    languages: [python]
+    severity: ERROR
+    paths:
+      include:
+        - "*/settings*.py"
+        - "*/config*.py"
+    metadata:
+      category: security
+      cwe: "CWE-489: Active Debug Code"
+```
+
+<Note>
+The `paths.include` field restricts this rule to files whose paths match `*/settings*.py` or `*/config*.py`, reducing false positives from test files that intentionally set `DEBUG = True`.
+</Note>
+
+### JavaScript: use of `innerHTML`
+
+Assigning untrusted HTML to `innerHTML` is a primary source of cross-site scripting (XSS) vulnerabilities.
+
+```yaml no-innerhtml.yaml
+rules:
+  - id: no-innerhtml
+    patterns:
+      - pattern: $EL.innerHTML = $VALUE
+      - pattern-not: $EL.innerHTML = "..."
+    message: |
+      Detected assignment to `innerHTML` with a non-literal value. This can
+      lead to XSS if `$VALUE` contains user-controlled content. Use
+      `textContent` for plain text or a sanitization library for HTML.
+    languages: [javascript, typescript]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-79: Cross-site Scripting"
+      owasp: "A03:2021 - Injection"
+```
+
+Matches:
+
+```javascript
+// ruleid: no-innerhtml
+element.innerHTML = userInput;
+
+// ruleid: no-innerhtml
+div.innerHTML = data.description;
+
+// ok: no-innerhtml
+element.innerHTML = "<b>static content</b>";
+```
+
+## Combining patterns with `patterns` and `pattern-either`
+
+You can combine multiple operators to build precise rules:
+
+```yaml combined-example.yaml
+rules:
+  - id: requests-without-timeout
+    patterns:
+      - pattern-either:
+          - pattern: requests.get(...)
+          - pattern: requests.post(...)
+          - pattern: requests.put(...)
+          - pattern: requests.delete(...)
+      - pattern-not: requests.$METHOD(..., timeout=...)
+    message: |
+      Detected an HTTP request without a `timeout`. Requests without timeouts
+      can hang indefinitely and cause your application to become unresponsive.
+      Always set a timeout:
+        requests.get(url, timeout=30)
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: reliability
+```
+
+This rule matches any of the common `requests` methods when called without a `timeout` keyword argument.

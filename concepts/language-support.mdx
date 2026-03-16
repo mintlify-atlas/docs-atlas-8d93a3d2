@@ -1,0 +1,172 @@
+---
+title: 'Language support'
+description: 'Complete reference for languages supported by Semgrep Code (SAST) and Semgrep Supply Chain (SCA), including generic mode and how to specify a language in rules and the CLI.'
+keywords: ['semgrep', 'language support', 'supported languages', 'SAST', 'SCA', 'generic mode', '--lang']
+---
+
+Semgrep supports 30+ languages for static analysis (SAST) and 12 languages across 15 package managers for software composition analysis (SCA).
+
+## Semgrep Code (SAST)
+
+The following languages can be targeted in rules and scanned with `semgrep`.
+
+<AccordionGroup>
+  <Accordion title="All supported languages (A–Z)">
+
+| Language | Key in `languages:` |
+|---|---|
+| Apex | `apex` |
+| Bash / Shell | `bash`, `sh` |
+| C | `c` |
+| C++ | `cpp`, `c++` |
+| C# | `csharp`, `cs` |
+| Clojure | `clojure` |
+| Dart | `dart` |
+| Dockerfile | `dockerfile`, `docker` |
+| Elixir | `elixir`, `ex` |
+| Go | `go`, `golang` |
+| HTML | `html` |
+| Java | `java` |
+| JavaScript | `javascript`, `js` |
+| JSON | `json` |
+| Jsonnet | `jsonnet` |
+| JSX | `jsx` |
+| Julia | `julia` |
+| Kotlin | `kotlin`, `kt` |
+| Lisp | `lisp` |
+| Lua | `lua` |
+| OCaml | `ocaml`, `ml` |
+| PHP | `php` |
+| Python | `python`, `python3`, `python2`, `py` |
+| R | `r` |
+| Ruby | `ruby`, `rb` |
+| Rust | `rust`, `rs` |
+| Scala | `scala` |
+| Scheme | `scheme` |
+| Solidity | `solidity`, `sol` |
+| Swift | `swift` |
+| Terraform / HCL | `terraform`, `tf`, `hcl` |
+| TSX | `tsx` |
+| TypeScript | `typescript`, `ts` |
+| XML | `xml` |
+| YAML | `yaml` |
+| Generic | `generic` |
+
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+When a rule targets `javascript`, Semgrep automatically also applies it to TypeScript files. The two languages share a rule set for maximal coverage.
+</Note>
+
+## Semgrep Supply Chain (SCA)
+
+Semgrep Supply Chain detects reachable vulnerabilities in open source dependencies. The following ecosystems are supported:
+
+| Language | Package managers |
+|---|---|
+| C# | NuGet |
+| Dart | Pub |
+| Go | Go modules (`go mod`) |
+| Java | Gradle, Maven |
+| JavaScript / TypeScript | npm, Yarn, Yarn 2, Yarn 3, pnpm |
+| Kotlin | Gradle, Maven |
+| PHP | Composer |
+| Python | pip, pip-tools, Pipenv, Poetry |
+| Ruby | RubyGems |
+| Rust | Cargo |
+| Scala | Maven |
+| Swift | SwiftPM |
+
+<Note>
+Supply Chain scanning requires a Semgrep AppSec Platform account. Run `semgrep login` before using SCA features.
+</Note>
+
+## Generic mode
+
+Generic mode enables Semgrep to search files that are not supported by a dedicated parser. It uses whitespace-aware string matching (via the `spacegrep` engine) rather than AST-based analysis.
+
+Use `generic` in the `languages:` field to target any file type:
+
+```yaml
+rules:
+  - id: find-todo-comments
+    pattern: "# TODO: $TASK"
+    message: "Unresolved TODO: $TASK"
+    languages: [generic]
+    severity: INFO
+```
+
+Generic mode also applies automatically to file types such as ERB templates, Jinja templates, and any file extension not claimed by a dedicated parser.
+
+### Choosing a generic engine
+
+Two generic engines are available via the `options:` field:
+
+| Engine | Key | Description |
+|---|---|---|
+| spacegrep | `spacegrep` (default) | Whitespace-sensitive structural matching |
+| aliengrep | `aliengrep` | Regex-based search over raw text |
+
+```yaml
+rules:
+  - id: custom-generic-rule
+    pattern: "SECRET_KEY = \"...\""
+    message: Possible hardcoded secret.
+    languages: [generic]
+    severity: ERROR
+    options:
+      generic_engine: aliengrep
+```
+
+## Specifying language in rules
+
+The `languages:` field in a rule accepts one or more language keys as a list:
+
+```yaml
+rules:
+  - id: eval-usage
+    pattern: eval($CODE)
+    message: "Avoid eval()."
+    languages: [javascript, typescript]   # applies to both
+    severity: WARNING
+
+  - id: cross-language-todo
+    pattern-regex: "TODO:"
+    message: "Unresolved TODO comment."
+    languages: [python, java, go, ruby]   # applies to all four
+    severity: INFO
+```
+
+## Specifying language on the CLI
+
+When running inline patterns with `-e`, you must specify the language with `--lang`:
+
+```bash
+# Search Python files
+semgrep -e '$X == $X' --lang=python src/
+
+# Search JavaScript files
+semgrep -e 'eval($CODE)' --lang=javascript src/
+
+# Search with a generic pattern
+semgrep -e 'SECRET_KEY = "..."' --lang=generic .
+```
+
+When scanning with `--config`, Semgrep uses the `languages:` field from each rule to determine which files to target — no `--lang` flag is needed.
+
+## Language detection
+
+Semgrep identifies a file's language using:
+
+1. **File extension** — `.py` → Python, `.go` → Go, `.ts` → TypeScript, etc.
+2. **Shebang line** — `#!/usr/bin/env python3` selects the Python parser even for files without a `.py` extension.
+3. **`--lang` flag** — overrides automatic detection when running inline patterns.
+
+<Tip>
+To scan a file with an uncommon or missing extension, use the `--lang` flag to explicitly specify the parser:
+
+```bash
+semgrep --config rules.yaml --lang=python my_script
+```
+</Tip>

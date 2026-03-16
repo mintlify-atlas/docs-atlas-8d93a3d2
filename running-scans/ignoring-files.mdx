@@ -1,0 +1,179 @@
+---
+title: "Ignoring files and findings"
+description: "Control which files Semgrep scans and suppress individual findings using .semgrepignore, path flags, and nosemgrep comments."
+keywords: ["semgrepignore", "nosemgrep", "ignore", "exclude", "include", "gitignore"]
+---
+
+Semgrep provides two independent mechanisms for controlling what it reports:
+
+- **Path ignoring** — prevent Semgrep from scanning certain files or directories entirely
+- **Finding suppression** — tell Semgrep to ignore a specific match on a specific line
+
+## The `.semgrepignore` file
+
+Place a `.semgrepignore` file in the root of your repository to tell Semgrep which files and directories to skip. The format follows `.gitignore` syntax.
+
+```gitignore
+# Ignore a file anywhere it appears in the project
+*.min.js
+
+# Ignore a directory anywhere it appears
+dist/
+node_modules/
+vendor/
+
+# Ignore a path relative to the project root
+/tests/
+/generated/
+src/generated
+
+# Include patterns from another file
+:include path/to/other/ignore/file
+```
+
+<Tip>
+Semgrep also respects your `.gitignore` by default. If a file is already excluded by git, Semgrep skips it too.
+</Tip>
+
+### Default ignored paths
+
+Semgrep automatically skips `.git/` directories regardless of your `.semgrepignore` configuration. Common build artifact directories such as `node_modules/`, `dist/`, and `vendor/` should be added to your `.semgrepignore` if you want to skip them.
+
+### Unsupported `.gitignore` syntax
+
+The pysemgrep `.semgrepignore` implementation does not support these patterns (they are silently dropped):
+
+- Explicit include syntax: `!kept/`
+- Multi-character expansion: `*.py[cod]`
+
+<Note>
+These restrictions apply only to the Python CLI implementation. The OCaml-based file targeting supports full `.gitignore` syntax.
+</Note>
+
+## Path flags
+
+You can also control which files Semgrep scans using command-line flags.
+
+### `--exclude` and `--include`
+
+Apply glob patterns to restrict or exclude files from scanning:
+
+```bash
+# Skip all test files
+semgrep scan --config=auto --exclude='*_test.py' --exclude='tests/' .
+
+# Scan only Python files
+semgrep scan --config=auto --include='*.py' .
+
+# Combine include and exclude
+semgrep scan --config=auto --include='src/**/*.py' --exclude='src/generated/' .
+```
+
+Both flags accept glob patterns and can be specified multiple times.
+
+### `--no-git-ignore`
+
+By default, Semgrep respects `.gitignore` files and skips any files git would ignore. To disable this behavior:
+
+```bash
+semgrep scan --config=auto --no-git-ignore .
+```
+
+This is useful in Docker containers or other environments where `.gitignore` rules may be overly broad.
+
+## Rule filtering
+
+You can filter which rules run without changing the config:
+
+```bash
+# Exclude a specific rule from all configured rules
+semgrep scan --config=p/python --exclude-rule=python.lang.security.some-rule .
+
+# Run only a specific rule from the configured rules
+semgrep scan --config=p/python --include-rule=python.lang.security.some-rule .
+```
+
+Both flags accept a rule ID and can be specified multiple times.
+
+## `# nosemgrep` inline suppression
+
+To suppress a finding on a specific line, add a `# nosemgrep` comment to that line or the line immediately before it.
+
+### Suppress all rules on a line
+
+```python
+unsafe_function(user_input)  # nosemgrep
+```
+
+This suppresses every finding reported on that line, regardless of which rule triggered it.
+
+### Suppress a specific rule
+
+```python
+unsafe_function(user_input)  # nosemgrep: python.lang.security.dangerous-function
+```
+
+Only findings from the named rule are suppressed. Other rules that match the same line still report findings.
+
+### Suppress multiple rules
+
+Provide a comma-separated list of rule IDs:
+
+```python
+unsafe_function(user_input)  # nosemgrep: rule-one, rule-two
+```
+
+### Suppress on the previous line
+
+For languages where inline end-of-line comments are not possible, place the comment on the line before:
+
+```python
+# nosemgrep: python.lang.security.dangerous-function
+unsafe_function(user_input)
+```
+
+<Note>
+`nosemgrep` is case-insensitive. `nosem` is also accepted as a shorter alias.
+</Note>
+
+<Warning>
+Using `# nosemgrep` to silence a finding does not mean the code is safe. Always confirm that a suppressed finding is a genuine false positive or an accepted risk before adding the comment.
+</Warning>
+
+## Path ignoring vs. finding suppression
+
+Understanding the difference between the two mechanisms helps you choose the right one:
+
+| | Path ignoring | Finding suppression |
+|---|---|---|
+| **Scope** | Entire file or directory | Single finding on a single line |
+| **How** | `.semgrepignore`, `--exclude`, `--include` | `# nosemgrep` comment |
+| **Effect** | File is not scanned at all | File is scanned; specific finding is hidden |
+| **Use when** | Generated code, test fixtures, third-party vendored code | Accepted risks or confirmed false positives in production code |
+
+## Example `.semgrepignore`
+
+```gitignore
+# Items added to this file will be ignored by Semgrep.
+#
+# This file uses .gitignore syntax.
+
+# Third-party and generated code
+node_modules/
+vendor/
+dist/
+build/
+.venv/
+
+# Test fixtures and snapshots
+tests/fixtures/
+tests/snapshots/
+
+# Minified or compiled assets
+*.min.js
+*.min.css
+*.bundle.js
+
+# Generated protobuf / thrift stubs
+src/generated/
+```

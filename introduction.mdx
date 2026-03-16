@@ -1,0 +1,114 @@
+---
+title: "Introduction"
+description: "Semgrep is a fast, open-source static analysis tool that searches code, finds bugs, and enforces secure guardrails and coding standards across 30+ languages."
+---
+
+Semgrep is **semantic grep for code**. While running `grep "2"` would only match the exact string `2`, Semgrep matches `x = 1; y = x + 1` when searching for `2`. Rules look like the code you already write — no abstract syntax trees, regex wrestling, or painful DSLs.
+
+<Note>
+  Semgrep analyzes code locally on your computer or in your build environment. **By default, code is never uploaded.**
+</Note>
+
+## How Semgrep works
+
+Semgrep parses source code into a language-agnostic Abstract Syntax Tree (AST), then matches patterns against that tree. This means a single rule can match semantically equivalent code even when it is written in different styles — Semgrep understands the structure of your code, not just its text.
+
+For example, the pattern `$X == $X` matches any comparison where both sides are identical, regardless of what `$X` is. This catches potential bugs like `if (a == a)` that a text search would miss if the variable name differed between occurrences.
+
+Rules are written in YAML and describe:
+
+- **Patterns** — what code to match, using metavariables (`$X`) and ellipsis operators (`...`)
+- **Message** — what to report when a match is found
+- **Languages** — which languages the rule applies to
+- **Severity** — `INFO`, `WARNING`, or `ERROR`
+
+```yaml Example rule
+rules:
+  - id: print-to-logger
+    patterns:
+      - pattern: print(...)
+    message: Found a print() statement. Use a logger instead.
+    languages: [python]
+    severity: WARNING
+```
+
+## How Semgrep differs from grep
+
+Grep matches text. Semgrep matches code structure.
+
+| | grep | Semgrep |
+|---|---|---|
+| Matches | Exact strings or regex | Code patterns (AST-based) |
+| Understands syntax | No | Yes |
+| Metavariables | No | Yes (`$X`, `$FUNC`, etc.) |
+| Ellipsis operator | No | Yes (`...` matches any arguments) |
+| Cross-statement matching | No | Yes |
+| False positives | High | Low |
+
+For example, `semgrep -e 'requests.get(..., verify=False)'` matches all calls to `requests.get` that pass `verify=False`, regardless of other arguments, whitespace, or whether it spans multiple lines.
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="30+ languages" icon="code">
+    Apex, Bash, C, C++, C#, Clojure, Dart, Dockerfile, Elixir, Go, HTML, Java, JavaScript, JSON, Julia, Jsonnet, Kotlin, Lisp, Lua, OCaml, PHP, Python, R, Ruby, Rust, Scala, Scheme, Solidity, Swift, Terraform, TypeScript, YAML, XML, and more.
+  </Card>
+  <Card title="Pattern matching" icon="magnifying-glass">
+    Semantic matching with metavariables (`$X`) and ellipsis operators (`...`) that understand code structure, not just text.
+  </Card>
+  <Card title="Taint analysis" icon="shield">
+    Track untrusted data as it flows from sources to sinks to detect injection vulnerabilities and other security issues.
+  </Card>
+  <Card title="Autofix" icon="wand-magic-sparkles">
+    Write rules that automatically rewrite matching code to apply fixes, enforcing standards across a codebase automatically.
+  </Card>
+  <Card title="CI/CD integration" icon="gears">
+    Scan on every pull request and report only new findings introduced by that change, so you can adopt Semgrep without fixing pre-existing issues first.
+  </Card>
+  <Card title="MCP server" icon="robot">
+    Run Semgrep from AI coding assistants via the Model Context Protocol. Integrates with Cursor, VS Code, Windsurf, and Claude.
+  </Card>
+</CardGroup>
+
+## The Semgrep ecosystem
+
+### Semgrep Community Edition
+
+The open-source program analysis engine at the heart of everything. Suitable for ad-hoc use cases, security audits, penetration testing, and enforcing coding standards. Analyzes code within the boundaries of a single function or file.
+
+This is the engine you run when you install the `semgrep` package and use it from the CLI.
+
+### Semgrep AppSec Platform
+
+A hosted platform for orchestrating and scaling SAST, SCA, and secrets scanning across an organization. Adds capabilities on top of Community Edition:
+
+- **Cross-file and cross-function analysis** — reduces false positives by ~25% and increases detected true positives by ~250% compared to Community Edition
+- **Semgrep Assistant (AI)** — contextual post-processing that reduces noise by ~20% and generates tailored remediation guidance
+- **Customizable policies** — control which findings developers see, where they see them, and when
+- **20,000+ Pro rules** — written and maintained by the Semgrep security research team
+
+Includes both free and paid tiers. Scans remain local — code is not uploaded.
+
+### Semgrep Registry
+
+A collection of 2,000+ community-driven and Semgrep-authored rules covering security vulnerabilities, correctness issues, and coding standards. Browse and run registry rules using the `--config=p/<pack>` flag.
+
+### Semgrep Playground
+
+An online interactive editor at [semgrep.dev/editor](https://semgrep.dev/editor) for writing, testing, and sharing rules without installing anything locally.
+
+## Language support
+
+Semgrep Code supports 30+ languages:
+
+> Apex · Bash · C · C++ · C# · Clojure · Dart · Dockerfile · Elixir · HTML · Go · Java · JavaScript · JSX · JSON · Julia · Jsonnet · Kotlin · Lisp · Lua · OCaml · PHP · Python · R · Ruby · Rust · Scala · Scheme · Solidity · Swift · Terraform · TypeScript · TSX · YAML · XML · Generic (ERB, Jinja, etc.)
+
+Semgrep Supply Chain supports dependency scanning across 12 languages and 15 package managers, including npm, pip, Maven, Gradle, Cargo, Composer, and more.
+
+## Privacy
+
+Semgrep analyzes code **locally** on your computer or in your build environment. By default, your source code is never uploaded to Semgrep's servers.
+
+When using remote rule configurations from the Registry (such as `--config=p/ci`), pseudonymous rule metrics are reported to semgrep.dev to help improve rules. You can disable this with `--metrics=off`. When using local rule files, metrics are sent only when you are logged in.
+
+See the [Semgrep privacy policy](https://semgrep.dev/docs/metrics) for a full breakdown of what data is and is not collected.

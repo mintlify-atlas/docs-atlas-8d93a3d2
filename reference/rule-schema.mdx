@@ -1,0 +1,538 @@
+---
+title: 'Rule schema'
+description: 'Complete YAML schema reference for Semgrep rules.'
+keywords: ['rule', 'schema', 'yaml', 'pattern', 'taint', 'severity', 'metadata']
+---
+
+Semgrep rules are written in YAML. Every rule file must have a top-level `rules` key containing a list of rule objects.
+
+```yaml
+rules:
+  - id: my-rule-id
+    message: "Rule found a match"
+    languages: [python]
+    severity: WARNING
+    pattern: dangerous_function($X)
+```
+
+## Top-level structure
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `rules` | list | Yes | List of rule objects |
+
+Each item in `rules` is a rule object with the fields described below.
+
+---
+
+## Rule fields
+
+### id
+
+```yaml
+id: no-eval
+```
+
+**Type:** string  
+**Required:** yes
+
+A unique identifier for the rule. Use kebab-case. IDs must be unique within a rule file.
+
+---
+
+### message
+
+```yaml
+message: "Avoid using eval(); it executes arbitrary code."
+```
+
+**Type:** string  
+**Required:** yes
+
+The message shown to users when the rule matches. Can include metavariable references using `$METAVAR` syntax.
+
+---
+
+### languages
+
+```yaml
+languages: [python, javascript]
+```
+
+**Type:** list of strings  
+**Required:** yes
+
+Languages the rule applies to. Semgrep uses this to select the correct parser.
+
+<AccordionGroup>
+  <Accordion title="Supported language identifiers">
+
+| Language | Identifiers |
+|----------|-------------|
+| Python | `python`, `python2`, `python3`, `py` |
+| JavaScript | `javascript`, `js` |
+| TypeScript | `typescript`, `ts` |
+| Java | `java` |
+| Go | `go`, `golang` |
+| Ruby | `ruby`, `rb` |
+| C | `c` |
+| C++ | `cpp`, `c++` |
+| C# | `csharp`, `c#` |
+| Rust | `rust` |
+| PHP | `php` |
+| Kotlin | `kotlin` |
+| Swift | `swift` |
+| Scala | `scala` |
+| HTML | `html` |
+| JSON | `json` |
+| YAML | `yaml` |
+| Terraform | `terraform`, `tf` |
+| Dockerfile | `dockerfile` |
+| Bash | `bash`, `sh` |
+| Generic | `generic` |
+| Regex | `regex` |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+### severity
+
+```yaml
+severity: WARNING
+```
+
+**Type:** string  
+**Required:** yes
+
+Severity level of the finding. Accepted values:
+
+| Value | Description |
+|-------|-------------|
+| `ERROR` | High severity, likely a bug or security issue |
+| `WARNING` | Medium severity, potential issue |
+| `INFO` | Informational, low severity |
+| `INVENTORY` | Used for inventory scans; not displayed as findings |
+| `EXPERIMENT` | Experimental rules; not shown by default |
+
+---
+
+## Pattern operators
+
+Exactly one of these keys must appear in each rule (or in each item within `patterns`/`pattern-either`).
+
+### pattern
+
+```yaml
+pattern: os.system($CMD)
+```
+
+**Type:** string
+
+A single Semgrep pattern to match. Supports metavariables (`$X`) and ellipsis (`...`).
+
+---
+
+### patterns
+
+```yaml
+patterns:
+  - pattern: foo($X)
+  - pattern-not: foo("safe")
+```
+
+**Type:** list
+
+A logical AND of multiple pattern conditions. All conditions must match for the rule to trigger.
+
+Items in the list may use any pattern operator: `pattern`, `pattern-not`, `pattern-inside`, `pattern-not-inside`, `pattern-regex`, `pattern-not-regex`, `metavariable-regex`, `metavariable-pattern`, `metavariable-comparison`, `focus-metavariable`.
+
+---
+
+### pattern-either
+
+```yaml
+pattern-either:
+  - pattern: exec($CMD)
+  - pattern: system($CMD)
+```
+
+**Type:** list
+
+A logical OR: the rule matches if any of the listed patterns matches.
+
+---
+
+### pattern-not
+
+```yaml
+patterns:
+  - pattern: foo($X)
+  - pattern-not: foo("safe_value")
+```
+
+**Type:** string
+
+Negate a pattern. Used inside `patterns` to exclude matches.
+
+---
+
+### pattern-inside
+
+```yaml
+patterns:
+  - pattern: dangerous_call()
+  - pattern-inside: |
+      def $FUNC(...):
+          ...
+```
+
+**Type:** string
+
+Requires the match to be contained within the specified pattern.
+
+---
+
+### pattern-not-inside
+
+```yaml
+patterns:
+  - pattern: dangerous_call()
+  - pattern-not-inside: |
+      if is_safe(...):
+          ...
+```
+
+**Type:** string
+
+Requires the match to NOT be contained within the specified pattern.
+
+---
+
+### pattern-regex
+
+```yaml
+pattern-regex: 'password\s*=\s*["\'][^"\']+["\']'
+```
+
+**Type:** string
+
+Match using a regular expression instead of a structural pattern. Useful for `generic` or `regex` language rules.
+
+---
+
+### focus-metavariable
+
+```yaml
+patterns:
+  - pattern: foo($X, $Y)
+  - focus-metavariable: $X
+```
+
+**Type:** string or list of strings
+
+Restrict the reported match location to the code captured by the specified metavariable(s) rather than the entire matched expression.
+
+---
+
+## Metavariable operators
+
+These operators filter or constrain metavariable values. Used inside `patterns`.
+
+### metavariable-regex
+
+```yaml
+patterns:
+  - pattern: $FUNC($X)
+  - metavariable-regex:
+      metavariable: $FUNC
+      regex: '^(exec|system|popen)$'
+```
+
+Requires the metavariable to match a regular expression.
+
+---
+
+### metavariable-pattern
+
+```yaml
+patterns:
+  - pattern: foo($X)
+  - metavariable-pattern:
+      metavariable: $X
+      patterns:
+        - pattern: get_user_input()
+```
+
+Applies a sub-pattern to a metavariable's value.
+
+---
+
+### metavariable-comparison
+
+```yaml
+patterns:
+  - pattern: sleep($N)
+  - metavariable-comparison:
+      metavariable: $N
+      comparison: $N > 60
+```
+
+Applies a comparison expression to a numeric metavariable.
+
+---
+
+### metavariable-type
+
+```yaml
+patterns:
+  - pattern: $X.execute($QUERY)
+  - metavariable-type:
+      metavariable: $X
+      types:
+        - Connection
+```
+
+Filters matches based on the inferred type of a metavariable. Requires Pro engine with type inference support.
+
+---
+
+## Fix fields
+
+### fix
+
+```yaml
+fix: safe_function($X)
+```
+
+**Type:** string  
+**Required:** no
+
+A replacement pattern for autofix. Semgrep will substitute the matched code with this string. Metavariables in the fix are expanded to their matched values.
+
+---
+
+### fix-regex
+
+```yaml
+fix-regex:
+  regex: '(password)\s*=\s*(["\']).*\2'
+  replacement: '\1 = os.environ["PASSWORD"]'
+```
+
+**Type:** object  
+**Required:** no
+
+Apply a regex-based fix to the matched code. Fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `regex` | string | Yes | Regex to search within the matched text |
+| `replacement` | string | Yes | Replacement string (supports capture group references) |
+| `count` | integer | No | Maximum number of replacements (default: all) |
+
+---
+
+## Metadata
+
+### metadata
+
+```yaml
+metadata:
+  cwe:
+    - 'CWE-78: Improper Neutralization of Special Elements used in an OS Command'
+  owasp:
+    - 'A03:2021 - Injection'
+  references:
+    - https://example.com/advisory
+  category: security
+  technology:
+    - python
+  confidence: HIGH
+  likelihood: MEDIUM
+  impact: HIGH
+```
+
+**Type:** object  
+**Required:** no
+
+Arbitrary key-value metadata attached to the rule. Semgrep does not interpret most metadata fields, but some are used by Semgrep AppSec Platform for triage, grouping, and display:
+
+| Key | Description |
+|-----|-------------|
+| `cwe` | CWE identifier(s) |
+| `owasp` | OWASP category reference(s) |
+| `references` | External documentation or advisory links |
+| `category` | Rule category (e.g. `security`, `correctness`, `performance`) |
+| `technology` | Frameworks or technologies the rule targets |
+| `confidence` | `LOW`, `MEDIUM`, or `HIGH` |
+| `likelihood` | `LOW`, `MEDIUM`, or `HIGH` |
+| `impact` | `LOW`, `MEDIUM`, or `HIGH` |
+
+---
+
+## Mode
+
+### mode
+
+```yaml
+mode: taint
+```
+
+**Type:** string  
+**Default:** `search`
+
+Execution mode for the rule:
+
+| Value | Description |
+|-------|-------------|
+| `search` | Pattern-matching mode (default) |
+| `taint` | Dataflow taint tracking mode |
+| `join` | Join mode (experimental) |
+
+---
+
+## Taint mode fields
+
+When `mode: taint`, these fields define the dataflow analysis.
+
+<Note>
+Taint mode requires Semgrep Pro Engine for full interfile analysis. Basic intrafile taint is available in the OSS engine.
+</Note>
+
+### pattern-sources
+
+```yaml
+pattern-sources:
+  - pattern: get_user_input()
+  - pattern: request.GET.get(...)
+```
+
+**Type:** list  
+**Required:** yes (in taint mode)
+
+Patterns that define where tainted data originates.
+
+---
+
+### pattern-sinks
+
+```yaml
+pattern-sinks:
+  - pattern: exec($CMD)
+  - pattern: os.system($CMD)
+```
+
+**Type:** list  
+**Required:** yes (in taint mode)
+
+Patterns that define where tainted data must not reach.
+
+---
+
+### pattern-sanitizers
+
+```yaml
+pattern-sanitizers:
+  - pattern: sanitize($X)
+  - pattern: html.escape($X)
+```
+
+**Type:** list  
+**Required:** no
+
+Patterns that clean or neutralize taint, stopping propagation.
+
+---
+
+### pattern-propagators
+
+```yaml
+pattern-propagators:
+  - pattern: $X.set($KEY, $VALUE)
+    from: $VALUE
+    to: $X
+```
+
+**Type:** list  
+**Required:** no
+
+Patterns that describe how taint propagates through function calls or assignments beyond what Semgrep infers automatically. Each item requires `from` and `to` metavariables.
+
+---
+
+## Options
+
+### options
+
+```yaml
+options:
+  interfile: true
+  taint_assume_safe_numbers: true
+  taint_assume_safe_booleans: true
+  symbolic_propagation: true
+```
+
+**Type:** object  
+**Required:** no
+
+Advanced per-rule analysis options. Common options:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `interfile` | boolean | Enable cross-file analysis for this rule (Pro only) |
+| `taint_assume_safe_numbers` | boolean | Do not propagate taint through numeric literals |
+| `taint_assume_safe_booleans` | boolean | Do not propagate taint through boolean literals |
+| `taint_assume_safe_strings` | boolean | Do not propagate taint through string literals |
+| `symbolic_propagation` | boolean | Enable symbolic value propagation |
+| `constant_propagation` | boolean | Enable constant propagation (default: true) |
+
+---
+
+## Complete example
+
+<CodeGroup>
+
+```yaml search mode
+rules:
+  - id: use-of-exec
+    message: |
+      Detected use of exec() with a potentially user-controlled value ($CMD).
+      Consider using subprocess with a list of arguments instead.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe:
+        - 'CWE-78: OS Command Injection'
+      confidence: MEDIUM
+    patterns:
+      - pattern: exec($CMD)
+      - pattern-not: exec("safe_string")
+    fix: subprocess.run(shlex.split($CMD), check=True)
+```
+
+```yaml taint mode
+rules:
+  - id: sql-injection
+    message: |
+      User-controlled data ($INPUT) reaches a SQL query without sanitization.
+    languages: [python]
+    severity: ERROR
+    mode: taint
+    metadata:
+      category: security
+      cwe:
+        - 'CWE-89: SQL Injection'
+    pattern-sources:
+      - pattern: request.GET.get(...)
+      - pattern: request.POST.get(...)
+    pattern-sinks:
+      - pattern: $DB.execute($QUERY)
+      - pattern: $DB.raw($QUERY)
+    pattern-sanitizers:
+      - pattern: django.db.connection.ops.adapt_unknown_value($X)
+```
+
+</CodeGroup>

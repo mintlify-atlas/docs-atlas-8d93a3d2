@@ -1,0 +1,231 @@
+---
+title: 'Configuration'
+description: 'Environment variables, .semgrepignore, and project-level configuration for Semgrep.'
+keywords: ['configuration', 'environment variables', 'semgrepignore', 'project config']
+---
+
+Semgrep can be configured via environment variables, ignore files, and project-level YAML configuration.
+
+---
+
+## Environment variables
+
+### Authentication and platform
+
+<ParamField path="SEMGREP_APP_TOKEN" type="string">
+  API token for authenticating with Semgrep AppSec Platform. Set this in CI to enable authenticated scans via `semgrep ci` without an interactive login.
+
+  ```bash
+  export SEMGREP_APP_TOKEN=your-token-here
+  semgrep ci
+  ```
+</ParamField>
+
+### CI metadata
+
+These variables provide Semgrep with repository context when running in CI. Most CI environments (GitHub Actions, GitLab CI, CircleCI) populate these automatically. Set them manually if your CI system does not export them.
+
+<ParamField path="SEMGREP_REPO_NAME" type="string">
+  Repository name in `owner/repo` format (e.g. `acme/myapp`). Used to associate scan results with the correct repository in Semgrep AppSec Platform.
+</ParamField>
+
+<ParamField path="SEMGREP_BRANCH" type="string">
+  Branch name for the current CI run. Used to label findings and diffs in Semgrep AppSec Platform.
+</ParamField>
+
+<ParamField path="SEMGREP_COMMIT" type="string">
+  Full commit SHA being scanned. Used to produce accurate finding permalinks.
+</ParamField>
+
+<ParamField path="SEMGREP_JOB_URL" type="string">
+  URL of the current CI job. Linked from findings in Semgrep AppSec Platform for traceability.
+</ParamField>
+
+<ParamField path="SEMGREP_PR_ID" type="string">
+  Pull request or merge request number. Used to correlate findings with the PR in Semgrep AppSec Platform.
+</ParamField>
+
+### Scan behavior
+
+<ParamField path="SEMGREP_RULES" type="string">
+  Default rule configuration. Equivalent to passing `--config` on the command line. Accepts the same values as `--config` (file paths, registry identifiers, URLs).
+
+  ```bash
+  export SEMGREP_RULES="p/python p/security-audit"
+  semgrep scan .
+  ```
+</ParamField>
+
+<ParamField path="SEMGREP_TIMEOUT" type="integer">
+  Per-file match timeout in seconds. Equivalent to `--timeout`. Default is `5`.
+</ParamField>
+
+<ParamField path="SEMGREP_SEND_METRICS" type="string">
+  Controls telemetry. Equivalent to `--metrics`. Accepts `auto`, `on`, or `off`.
+</ParamField>
+
+<ParamField path="SEMGREP_SUPPRESS_ERRORS" type="boolean">
+  When set to `true`, suppress non-fatal errors in `semgrep ci` and exit with code `0` instead of `2`. Equivalent to `--suppress-errors`.
+</ParamField>
+
+<ParamField path="SEMGREP_ENABLE_VERSION_CHECK" type="boolean">
+  Control whether Semgrep checks for a newer version after each scan. Set to `false` to disable. Equivalent to `--disable-version-check`.
+</ParamField>
+
+<ParamField path="SEMGREP_BASELINE_COMMIT" type="string">
+  Baseline git commit for diff scans. Only findings introduced since this commit are reported. Also accepted as `SEMGREP_BASELINE_REF`. Equivalent to `--baseline-commit`.
+</ParamField>
+
+### MCP server
+
+<ParamField path="MCP_TRANSPORT" type="string">
+  Transport protocol for the MCP server. Accepts `stdio` or `streamable-http`. Equivalent to `--transport`.
+</ParamField>
+
+<ParamField path="SEMGREP_MCP_PORT" type="integer">
+  Port for the MCP HTTP server. Default is `8000`. Equivalent to `--port`.
+</ParamField>
+
+### Tracing
+
+<ParamField path="SEMGREP_OTEL_ENDPOINT" type="string">
+  OpenTelemetry collector endpoint URL for trace export. Equivalent to `--trace-endpoint`. Requires `--trace` to be set.
+</ParamField>
+
+---
+
+## .semgrepignore
+
+Semgrep respects `.semgrepignore` files to exclude files and directories from scanning, using `.gitignore`-style glob syntax.
+
+### Location
+
+Place `.semgrepignore` in the root of your repository (next to `.git/`). Semgrep also respects `.gitignore` by default; `.semgrepignore` lets you exclude files from Semgrep scanning without affecting git.
+
+### Syntax
+
+```
+# Comments start with #
+
+# Exclude a directory
+node_modules/
+
+# Exclude by extension
+*.min.js
+*.generated.py
+
+# Exclude a specific file
+src/legacy/old_code.py
+
+# Exclude a pattern anywhere in the tree
+**/__snapshots__/
+
+# Negate a pattern (re-include)
+!src/important.py
+```
+
+### Default ignores
+
+Semgrep automatically ignores certain paths even without a `.semgrepignore` file:
+
+- `.git/`
+- `node_modules/`
+- `vendor/`
+- `*.lock` files
+- Minified files (detected by line length heuristics)
+- Binary files
+
+<Tip>
+Run `semgrep scan --verbose` to see which files are being ignored and why.
+</Tip>
+
+---
+
+## Project configuration file
+
+Semgrep looks for a project-level configuration file at `.semgrep/config.yml` or `.semgrep.yml` in the repository root. This file sets default scan options that apply whenever Semgrep runs in that project.
+
+```yaml
+# .semgrep.yml
+rules:
+  - id: local-custom-rule
+    message: "Local rule triggered"
+    languages: [python]
+    severity: WARNING
+    pattern: insecure_func($X)
+```
+
+<Note>
+The project config file is primarily used to bundle rules with your repository. Per-scan options (timeouts, output formats, etc.) are best set via environment variables or CLI flags in your CI configuration.
+</Note>
+
+---
+
+## Advanced scan options
+
+Individual rules can set per-rule options using the `options:` key. These override global defaults for that rule.
+
+```yaml
+rules:
+  - id: my-taint-rule
+    mode: taint
+    options:
+      taint_assume_safe_numbers: true
+      taint_assume_safe_booleans: true
+      symbolic_propagation: true
+      interfile: true
+    # ... rest of rule
+```
+
+See the [rule schema options reference](/reference/rule-schema#options) for the full list.
+
+---
+
+## Memory management
+
+For large codebases or memory-constrained environments, Semgrep provides several memory controls.
+
+### --max-memory
+
+Sets an upper bound in MiB on the memory the engine may use:
+
+```bash
+semgrep scan --max-memory 4000 .
+```
+
+### --x-mem-policy
+
+An experimental flag that selects a named memory management strategy:
+
+```bash
+semgrep scan --x-mem-policy balanced .
+semgrep scan --x-mem-policy aggressive .
+```
+
+| Policy | Description |
+|--------|-------------|
+| `balanced` | Trade some speed for reduced memory usage |
+| `aggressive` | Aggressively free memory; slowest but lowest peak usage |
+
+<Warning>
+`--x-mem-policy` is an experimental flag. Its behavior and accepted values may change in future releases.
+</Warning>
+
+### --jobs
+
+Reducing the number of parallel jobs also reduces peak memory consumption:
+
+```bash
+semgrep scan --jobs 2 .
+```
+
+---
+
+## Configuration precedence
+
+When multiple sources provide the same setting, Semgrep resolves conflicts in this order (highest priority first):
+
+1. CLI flags
+2. Environment variables
+3. Project configuration file (`.semgrep.yml`)
+4. Built-in defaults

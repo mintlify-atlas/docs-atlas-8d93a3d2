@@ -1,0 +1,198 @@
+---
+title: "Overview"
+description: "Learn how to write Semgrep rules using patterns that look like the code you already write."
+keywords: ["semgrep rules", "writing rules", "rule anatomy", "rule syntax", "custom rules"]
+---
+
+Semgrep rules look like the code you're searching for. A rule that finds Python `print()` statements looks like a Python `print()` statement. There are no abstract syntax trees to learn, no regex wrestling, and no painful DSLs.
+
+## Rule anatomy
+
+Every Semgrep rule is a YAML document with a `rules` list. Each rule in the list is an object with the following fields:
+
+```yaml Example rule
+rules:
+  - id: no-hardcoded-secrets
+    patterns:
+      - pattern: password = "..."
+    message: |
+      Hardcoded password detected. Use environment variables or
+      a secrets manager instead.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      confidence: HIGH
+```
+
+### Required fields
+
+| Field | Description |
+|---|---|
+| `id` | Unique identifier for the rule within its file. Use kebab-case: `my-rule-id`. |
+| `message` | The message shown when the rule matches. Explain what was found and how to fix it. |
+| `languages` | List of languages this rule applies to, e.g. `[python]`, `[javascript, typescript]`. |
+| `severity` | One of `INFO`, `WARNING`, `ERROR`. Controls how findings are reported. |
+
+You must also include exactly one pattern clause. The most common options are:
+
+| Field | Description |
+|---|---|
+| `pattern` | A single pattern to match. |
+| `patterns` | A list of patterns that must all match (logical AND). |
+| `pattern-either` | A list of patterns where any one can match (logical OR). |
+| `match` | Shorthand syntax combining `patterns` and `pattern-either` in a more readable form. |
+
+### Optional fields
+
+| Field | Description |
+|---|---|
+| `mode` | Set to `taint` for dataflow analysis. Omit for standard pattern matching. |
+| `fix` | A pattern to replace matched code with (autofix). |
+| `fix-regex` | A regex-based replacement for matched code (autofix). |
+| `metadata` | Arbitrary key-value data attached to findings (category, CVE, OWASP, etc.). |
+| `options` | Advanced rule options (e.g. `symbolic_propagation`, `taint_assume_safe_numbers`). |
+| `paths` | Restrict the rule to specific file paths using `include` and `exclude` lists. |
+
+### Pattern operators
+
+Within a `patterns` block you can combine pattern clauses:
+
+| Operator | Description |
+|---|---|
+| `pattern` | Match this code pattern. |
+| `pattern-not` | Exclude matches where this also matches. |
+| `pattern-inside` | Match only within a surrounding context. |
+| `pattern-not-inside` | Exclude matches within a surrounding context. |
+| `pattern-either` | Match any one of a list of patterns. |
+| `pattern-regex` | Match using a PCRE2 regular expression. |
+| `pattern-not-regex` | Exclude matches using a regular expression. |
+| `metavariable-regex` | Filter metavariable bindings using a regex. |
+| `metavariable-pattern` | Filter metavariable bindings using a sub-pattern. |
+| `metavariable-comparison` | Filter metavariable bindings using a comparison. |
+| `focus-metavariable` | Report only the range of a specific metavariable. |
+
+## Rule development workflow
+
+<Steps>
+  <Step title="Start in the Semgrep Playground">
+    Open [semgrep.dev/editor](https://semgrep.dev/editor) to write and test rules interactively without installing anything. Paste target code in the right pane and write your rule in the left pane. Matches highlight in real time.
+  </Step>
+  <Step title="Test against example code">
+    Add both positive examples (code the rule should match) and negative examples (code it should not match). Verify that your metavariables bind to the right values.
+  </Step>
+  <Step title="Validate locally">
+    Once you're satisfied, save the rule as a YAML file and validate it:
+    ```bash
+    semgrep --validate --config your-rule.yaml
+    ```
+    Validation checks the rule schema, pattern syntax, and metavariable usage.
+  </Step>
+  <Step title="Write tests">
+    Create a test file alongside your rule file with inline annotations:
+    ```python
+    # ruleid: no-hardcoded-secrets
+    password = "hunter2"
+
+    # ok: no-hardcoded-secrets
+    password = os.environ["PASSWORD"]
+    ```
+    Run tests with:
+    ```bash
+    semgrep --test --config your-rule.yaml
+    ```
+  </Step>
+  <Step title="Add to your config">
+    Reference your rule file in your scan command or `.semgrepignore`:
+    ```bash
+    semgrep scan --config your-rule.yaml .
+    ```
+    Or combine with registry rule packs:
+    ```bash
+    semgrep scan --config your-rule.yaml --config p/python .
+    ```
+  </Step>
+</Steps>
+
+## Rule testing
+
+Semgrep has a built-in test runner. Place a test file next to your rule file with the same name but a code extension (e.g. `my-rule.py` next to `my-rule.yaml`).
+
+Annotate lines in the test file to declare expected outcomes:
+
+| Annotation | Meaning |
+|---|---|
+| `# ruleid: rule-id` | This line should be matched by the rule. |
+| `# ok: rule-id` | This line should NOT be matched by the rule. |
+| `# todoruleid: rule-id` | Known false negative — the rule should match here but does not yet. |
+| `# todook: rule-id` | Known false positive — the rule matches here but should not. |
+
+Run tests:
+
+```bash
+semgrep --test --config rules/
+```
+
+## Rule validation
+
+Validate rules before using them in CI or sharing them:
+
+```bash
+# Validate a single file
+semgrep --validate --config my-rule.yaml
+
+# Validate all rules in a directory
+semgrep --validate --config rules/
+```
+
+Validation catches:
+- Schema errors (missing required fields, unknown fields)
+- Pattern syntax errors
+- Metavariable usage issues (e.g. using `$X` in a fix without binding it in the pattern)
+
+## Best practices
+
+<Tip>
+High-signal rules catch real bugs without overwhelming developers. Follow these practices to build rules worth using.
+</Tip>
+
+**Be specific.** Broad patterns produce noise. Use `pattern-not` and `pattern-inside` to narrow matches to the cases you care about. A rule that matches `exec(...)` everywhere is far noisier than one that matches only `exec` called with user-controlled input.
+
+**Write actionable messages.** The `message` field is shown to developers when a finding is reported. It should explain what was found, why it matters, and how to fix it. Avoid vague messages like "Security issue found".
+
+**Use `metadata` for context.** Attach `category`, `confidence`, `cwe`, and `owasp` fields so findings can be triaged and filtered effectively:
+
+```yaml
+metadata:
+  category: security
+  confidence: HIGH
+  cwe: "CWE-78: OS Command Injection"
+  owasp: "A03:2021 - Injection"
+```
+
+**Test both sides.** Every rule should have at least one positive test case (`# ruleid:`) and one negative test case (`# ok:`). This prevents regressions when rules are updated.
+
+**Keep rules focused.** One rule should detect one thing. Split complex detection logic into multiple targeted rules rather than building one rule that tries to catch everything.
+
+## Publishing to the registry
+
+You can contribute rules to the [Semgrep Registry](https://semgrep.dev/explore), a collection of 2,000+ community-maintained rules.
+
+<Steps>
+  <Step title="Fork the semgrep-rules repository">
+    The registry rules live in [github.com/semgrep/semgrep-rules](https://github.com/semgrep/semgrep-rules). Fork and clone it.
+  </Step>
+  <Step title="Add your rule">
+    Place your rule YAML file under the appropriate language directory (e.g. `python/security/`) following the existing file naming conventions.
+  </Step>
+  <Step title="Add test files">
+    Include a test file alongside your rule. The CI pipeline runs `semgrep --test` against all rules.
+  </Step>
+  <Step title="Open a pull request">
+    Submit a pull request with a description of what the rule detects, example vulnerable code, and references to CVEs or CWEs if applicable.
+  </Step>
+</Steps>
+
+<Note>
+The Semgrep Registry team reviews all contributions for accuracy and quality before merging. Rules are expected to have low false-positive rates and clear, actionable messages.
+</Note>

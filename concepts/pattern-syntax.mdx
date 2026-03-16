@@ -1,0 +1,255 @@
+---
+title: 'Pattern syntax'
+description: 'Learn how Semgrep patterns work, including exact and semantic matching, all pattern operators, the ellipsis operator, and language-specific patterns.'
+keywords: ['semgrep', 'pattern syntax', 'patterns', 'pattern-either', 'pattern-not', 'pattern-inside', 'ellipsis', 'semantic matching']
+---
+
+Semgrep patterns look like the code you're searching for. Unlike regular expressions, Semgrep patterns operate on the parsed AST (abstract syntax tree), so they match code semantically — whitespace, comments, and equivalent syntax variations are ignored.
+
+## Exact vs. semantic matching
+
+A plain `grep` for `foo(1 + 1)` would only find that exact string. A Semgrep pattern `foo(1 + 1)` also matches:
+
+- `foo( 1+1 )` — different spacing
+- `foo(/* comment */ 1 + 1)` — inline comment
+- `x = 1; foo(x + 1)` — when Semgrep can resolve `x == 1` through constant propagation (Pro engine)
+
+This is what "semantic matching" means: Semgrep understands code structure, not just text.
+
+## The ellipsis operator `...`
+
+The ellipsis `...` is one of the most useful constructs in Semgrep. It means "match zero or more of anything here".
+
+<AccordionGroup>
+  <Accordion title="Match any arguments">
+    ```yaml
+    pattern: requests.get(...)
+    ```
+    Matches `requests.get(url)`, `requests.get(url, timeout=5)`, `requests.get(url, headers=h, verify=False)`, and so on.
+  </Accordion>
+
+  <Accordion title="Match statements in a block">
+    ```yaml
+    pattern: |
+      def $FUNC(...):
+        ...
+        return $X
+    ```
+    Matches any function that ends with a `return` statement, regardless of how many statements come before it.
+  </Accordion>
+
+  <Accordion title="Match code between two points">
+    ```yaml
+    pattern: |
+      $OBJ.connect(...)
+      ...
+      $OBJ.execute($QUERY)
+    ```
+    Matches code that calls `.execute()` on the same object that was `.connect()`ed, with any code in between.
+  </Accordion>
+</AccordionGroup>
+
+## Pattern operators
+
+### `pattern:` — single pattern
+
+Matches code against a single pattern. Use this for simple, self-contained searches.
+
+```yaml
+rules:
+  - id: find-eval
+    pattern: eval($X)
+    message: Avoid eval() — matched expression is `$X`.
+    languages: [python]
+    severity: WARNING
+```
+
+### `patterns:` — AND (all must match)
+
+A list of sub-conditions that **all** must be satisfied. Sub-items can be pattern terms or metavariable conditions.
+
+```yaml
+rules:
+  - id: flask-debug-mode
+    patterns:
+      - pattern: app.run(...)
+      - pattern: app.run(..., debug=True, ...)
+    message: Flask debug mode is enabled — do not deploy this to production.
+    languages: [python]
+    severity: ERROR
+```
+
+<Note>
+`patterns:` must contain at least one positive match term (i.e. not just `pattern-not:` entries).
+</Note>
+
+### `pattern-either:` — OR (any must match)
+
+A list of alternatives — a finding is reported if **any** sub-pattern matches.
+
+```yaml
+rules:
+  - id: insecure-hash
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
+    message: MD5 and SHA-1 are cryptographically weak. Use SHA-256 or stronger.
+    languages: [python]
+    severity: WARNING
+```
+
+### `pattern-not:` — exclude matches
+
+Excludes code that matches the given pattern from the overall match. Must appear inside a `patterns:` block alongside at least one positive pattern.
+
+```yaml
+rules:
+  - id: subprocess-without-shell
+    patterns:
+      - pattern: subprocess.run($CMD, ...)
+      - pattern-not: subprocess.run($CMD, ..., shell=False, ...)
+    message: subprocess.run() without shell=False may be unsafe.
+    languages: [python]
+    severity: WARNING
+```
+
+### `pattern-inside:` — must be inside
+
+Restricts matches to code that appears inside the given surrounding pattern. Useful for finding something only in a specific context.
+
+```yaml
+rules:
+  - id: print-inside-loop
+    patterns:
+      - pattern-inside: |
+          for ... in ...:
+            ...
+      - pattern: print(...)
+    message: print() called inside a loop — consider using a logger.
+    languages: [python]
+    severity: INFO
+```
+
+### `pattern-not-inside:` — must not be inside
+
+Excludes code that appears inside the given surrounding pattern. The inverse of `pattern-inside:`.
+
+```yaml
+rules:
+  - id: bar-not-in-foo
+    patterns:
+      - pattern: bar()
+      - pattern-not-inside: foo(...)
+    message: bar() called outside of foo().
+    languages: [python]
+    severity: WARNING
+```
+
+### `pattern-regex:` — regular expression
+
+Matches file content using a regular expression rather than a code pattern. Useful for strings, comments, and content that can't be expressed as a code pattern.
+
+```yaml
+rules:
+  - id: hardcoded-ip
+    pattern-regex: '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    message: Possible hardcoded IP address detected.
+    languages: [python, javascript]
+    severity: WARNING
+```
+
+<Note>
+`pattern-regex:` operates on raw source text, not the AST. It ignores language structure and matches anywhere in the file.
+</Note>
+
+### `focus-metavariable:` — narrow the match range
+
+By default, a match highlights the entire code range matched by the outermost pattern. `focus-metavariable:` narrows the reported range to just the code captured by a specific metavariable.
+
+```yaml
+rules:
+  - id: tainted-argument
+    patterns:
+      - pattern: foo($Y, $X, $Z)
+      - focus-metavariable: $X
+    message: The second argument to foo() may be tainted.
+    languages: [python]
+    severity: WARNING
+```
+
+The finding highlights only `$X` rather than the entire `foo(...)` call.
+
+## Combining operators
+
+Operators compose naturally. The following rule finds all `os.system()` calls that are not inside a `try/except` block and whose argument matches a suspicious pattern:
+
+```yaml
+rules:
+  - id: unsafe-os-system
+    patterns:
+      - pattern: os.system($CMD)
+      - pattern-not-inside: |
+          try:
+            ...
+          except:
+            ...
+      - metavariable-regex:
+          metavariable: $CMD
+          regex: '.*\+.*'
+    message: os.system() called with a concatenated string `$CMD` outside a try block.
+    languages: [python]
+    severity: ERROR
+```
+
+## Language-specific patterns
+
+Semgrep patterns follow the syntax of the target language. The same structural intent looks different across languages:
+
+<CodeGroup>
+
+```yaml python.yaml
+rules:
+  - id: python-open-without-close
+    patterns:
+      - pattern: open($PATH, ...)
+      - pattern-not-inside: |
+          with open(...) as $F:
+            ...
+    message: File opened without using a context manager — `$PATH` may not be closed.
+    languages: [python]
+    severity: WARNING
+```
+
+```yaml java.yaml
+rules:
+  - id: java-sql-concat
+    patterns:
+      - pattern: $STMT.executeQuery($QUERY + $INPUT)
+    message: SQL query built by string concatenation. Use PreparedStatement.
+    languages: [java]
+    severity: ERROR
+```
+
+```yaml javascript.yaml
+rules:
+  - id: js-eval
+    pattern: eval($CODE)
+    message: Avoid eval() — `$CODE` may execute attacker-controlled code.
+    languages: [javascript, typescript]
+    severity: ERROR
+```
+
+</CodeGroup>
+
+## Operator reference
+
+| Operator | Logic | Used inside |
+|---|---|---|
+| `pattern:` | Single match | Top-level or `patterns:` |
+| `patterns:` | AND — all must match | Top-level |
+| `pattern-either:` | OR — any must match | Top-level or `patterns:` |
+| `pattern-not:` | Negation | `patterns:` |
+| `pattern-inside:` | Containment (positive) | `patterns:` |
+| `pattern-not-inside:` | Containment (negative) | `patterns:` |
+| `pattern-regex:` | Regex on raw text | Top-level or `patterns:` |
+| `focus-metavariable:` | Narrow reported range | `patterns:` |

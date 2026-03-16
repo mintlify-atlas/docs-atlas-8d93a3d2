@@ -1,0 +1,196 @@
+---
+title: "Pre-commit"
+description: "Run Semgrep as a pre-commit hook to catch issues before they are committed."
+keywords: ["pre-commit", "git hooks", "local scan", "developer workflow"]
+---
+
+Semgrep integrates with [pre-commit](https://pre-commit.com/) to scan code automatically before each git commit. This catches issues early, before they reach CI.
+
+## Setup
+
+<Steps>
+  <Step title="Install pre-commit">
+    ```bash
+    pip install pre-commit
+    ```
+
+    Or with Homebrew:
+
+    ```bash
+    brew install pre-commit
+    ```
+  </Step>
+
+  <Step title="Create or update .pre-commit-config.yaml">
+    Add a Semgrep hook to your `.pre-commit-config.yaml`:
+
+    ```yaml .pre-commit-config.yaml
+    repos:
+      - repo: https://github.com/semgrep/semgrep
+        rev: v1.155.0
+        hooks:
+          - id: semgrep
+            args: ['--config', 'auto', '--error']
+    ```
+
+    Replace `v1.155.0` with the latest Semgrep release. Find the current version on the [releases page](https://github.com/semgrep/semgrep/releases).
+  </Step>
+
+  <Step title="Install the git hooks">
+    ```bash
+    pre-commit install
+    ```
+
+    This installs the hooks into `.git/hooks/pre-commit`. From now on, Semgrep runs automatically before each commit.
+  </Step>
+</Steps>
+
+## Available hook IDs
+
+The Semgrep repository defines the following hooks in `.pre-commit-hooks.yaml`:
+
+| Hook ID | Description |
+|---------|-------------|
+| `semgrep` | Runs `semgrep` on staged files. Uses Python language mode, which installs Semgrep via pip. Significantly faster than the Docker-based hooks, especially on macOS. |
+| `semgrep-ci` | Runs `semgrep ci --dry-run --baseline-commit HEAD`. Does not accept filenames as parameters. |
+| `semgrep-docker` | Runs `semgrep:latest` via Docker. Uses the latest published Semgrep image. |
+| `semgrep-docker-develop` | Runs `semgrep:develop` via Docker. Uses the bleeding-edge Semgrep image. Useful for testing pre-release behavior. |
+
+<Note>
+  The `semgrep` hook (non-Docker) is recommended for day-to-day use. It installs Semgrep via pip in a pre-commit-managed virtual environment and is much faster than the Docker-based variants, particularly on macOS where Docker has higher startup overhead.
+</Note>
+
+## Configuring which rules to run
+
+Pass `--config` in the `args` list to control which rules Semgrep uses:
+
+<CodeGroup>
+
+```yaml Auto (detect by language)
+repos:
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.155.0
+    hooks:
+      - id: semgrep
+        args: ['--config', 'auto', '--error']
+```
+
+```yaml Registry ruleset
+repos:
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.155.0
+    hooks:
+      - id: semgrep
+        args: ['--config', 'p/security-audit', '--error']
+```
+
+```yaml Local rule file
+repos:
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.155.0
+    hooks:
+      - id: semgrep
+        args: ['--config', '.semgrep/rules.yml', '--error']
+```
+
+```yaml Multiple configs
+repos:
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.155.0
+    hooks:
+      - id: semgrep
+        args:
+          - '--config'
+          - 'p/security-audit'
+          - '--config'
+          - 'p/python'
+          - '--error'
+```
+
+</CodeGroup>
+
+## Filtering by file type
+
+Use pre-commit's `types` or `files` options to restrict which files Semgrep scans:
+
+```yaml .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.155.0
+    hooks:
+      - id: semgrep
+        types: [python]
+        args: ['--config', 'p/python', '--error']
+```
+
+## Handling false positives with nosemgrep
+
+To suppress a finding on a specific line, add a `# nosemgrep` comment:
+
+```python
+# nosemgrep: rule-id
+result = dangerous_function(user_input)
+```
+
+To suppress all findings on a line:
+
+```python
+result = dangerous_function(user_input)  # nosemgrep
+```
+
+To suppress findings in an entire file, add a comment at the top:
+
+```python
+# nosemgrep
+```
+
+<Warning>
+  Use `nosemgrep` sparingly. Document the reason for suppression so future maintainers understand why the finding was dismissed.
+</Warning>
+
+## Running manually
+
+Run the Semgrep hook on all files without committing:
+
+```bash
+pre-commit run semgrep --all-files
+```
+
+Run only on staged files:
+
+```bash
+pre-commit run semgrep
+```
+
+Run a specific hook variant:
+
+```bash
+pre-commit run semgrep-docker --all-files
+```
+
+## Performance considerations for large repositories
+
+For repositories with many files, pre-commit passes all staged files to Semgrep in a single invocation. A few options to improve performance:
+
+- **Use `auto` config**: Semgrep automatically selects rules based on detected languages, which avoids loading inapplicable rules.
+- **Use `--skip-unknown-extensions`**: Semgrep skips files with extensions it does not recognize, reducing unnecessary work. The built-in `semgrep` hook passes this flag by default.
+- **Use `--quiet`**: Suppresses the startup banner, which is useful when pre-commit runs Semgrep multiple times in one session (for example, when files are batched).
+- **Prefer the non-Docker hook**: The `semgrep` hook is significantly faster than `semgrep-docker` or `semgrep-docker-develop` because it avoids Docker startup overhead.
+- **Use `--metrics=off`**: Disables metrics collection, saving a few seconds per run.
+
+Example configuration with performance flags:
+
+```yaml .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.155.0
+    hooks:
+      - id: semgrep
+        args:
+          - '--config'
+          - 'auto'
+          - '--error'
+          - '--quiet'
+          - '--skip-unknown-extensions'
+          - '--metrics=off'
+```

@@ -1,122 +1,96 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Semgrep",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1bc096",
+    "light": "#92dfd1",
+    "dark": "#2c3434"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "tabs": [
-      {
-        "tab": "Guides",
-        "groups": [
-          {
-            "group": "Getting started",
-            "pages": [
-              "index",
-              "quickstart",
-              "development"
-            ]
-          },
-          {
-            "group": "Customization",
-            "pages": [
-              "essentials/settings",
-              "essentials/navigation"
-            ]
-          },
-          {
-            "group": "Writing content",
-            "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "API reference",
-        "groups": [
-          {
-            "group": "API documentation",
-            "pages": [
-              "api-reference/introduction"
-            ]
-          },
-          {
-            "group": "Endpoint examples",
-            "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
-            ]
-          }
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
+  "favicon": "https://media.brand.dev/dfbab23b-ae5c-4bff-afdc-9ae67c85331d.png",
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "https://media.brand.dev/54d94b8b-8ef9-4098-8c08-6ee5c00c2944.svg",
+    "dark": "https://media.brand.dev/54d94b8b-8ef9-4098-8c08-6ee5c00c2944.svg"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/semgrep/semgrep"
     }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/semgrep/semgrep"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/rules",
+              "concepts/pattern-syntax",
+              "concepts/metavariables",
+              "concepts/language-support"
+            ]
+          },
+          {
+            "group": "Writing Rules",
+            "pages": [
+              "writing-rules/overview",
+              "writing-rules/pattern-examples",
+              "writing-rules/taint-analysis",
+              "writing-rules/autofix"
+            ]
+          },
+          {
+            "group": "Running Scans",
+            "pages": [
+              "running-scans/local-scan",
+              "running-scans/ci-cd",
+              "running-scans/output-formats",
+              "running-scans/ignoring-files"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/github-actions",
+              "integrations/gitlab-ci",
+              "integrations/pre-commit",
+              "integrations/mcp-server"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/cli-reference",
+              "reference/rule-schema",
+              "reference/exit-codes",
+              "reference/configuration"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/overview",
+              "contributing/development-setup",
+              "contributing/architecture"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

@@ -1,0 +1,195 @@
+---
+title: "Output formats"
+description: "Control how Semgrep formats and outputs scan results, including JSON, SARIF, GitLab, and JUnit XML."
+keywords: ["output", "json", "sarif", "junit", "gitlab", "emacs", "vim", "output format"]
+---
+
+## Available formats
+
+Semgrep supports multiple output formats controlled by a single flag. Only one primary format can be active at a time.
+
+<Tabs>
+  <Tab title="Text (default)">
+    Human-readable output optimized for terminal display. This is the default when no format flag is given.
+
+    ```bash
+    semgrep scan --config=auto --text .
+    ```
+
+    Output includes colored code snippets, rule IDs, severity levels, and a summary at the end.
+  </Tab>
+  <Tab title="JSON">
+    Machine-readable JSON output. Use this for downstream processing, custom dashboards, or integrating with other tools.
+
+    ```bash
+    semgrep scan --config=auto --json .
+    ```
+  </Tab>
+  <Tab title="SARIF">
+    [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) format for IDE integration and GitHub Code Scanning.
+
+    ```bash
+    semgrep scan --config=auto --sarif .
+    ```
+  </Tab>
+  <Tab title="GitLab">
+    GitLab-compatible SAST and secrets JSON formats.
+
+    ```bash
+    # GitLab SAST report
+    semgrep scan --config=auto --gitlab-sast .
+
+    # GitLab Secrets report
+    semgrep scan --config=auto --gitlab-secrets .
+    ```
+  </Tab>
+  <Tab title="JUnit XML">
+    JUnit XML format for CI test report integration.
+
+    ```bash
+    semgrep scan --config=auto --junit-xml .
+    ```
+  </Tab>
+  <Tab title="Editor formats">
+    ```bash
+    # Emacs compilation format
+    semgrep scan --config=auto --emacs .
+
+    # Vim quickfix format
+    semgrep scan --config=auto --vim .
+    ```
+  </Tab>
+</Tabs>
+
+## Saving output to a file
+
+Use `-o` / `--output` to write the primary output to a file instead of stdout:
+
+```bash
+semgrep scan --config=auto --json --output results.json .
+```
+
+Semgrep also supports writing **additional outputs** in different formats simultaneously using format-specific output flags:
+
+```bash
+# Print text to stdout AND write JSON and SARIF to files
+semgrep scan --config=auto \
+  --json-output results.json \
+  --sarif-output results.sarif \
+  .
+```
+
+The available additional output flags are: `--text-output`, `--json-output`, `--sarif-output`, `--emacs-output`, `--vim-output`, `--gitlab-sast-output`, `--gitlab-secrets-output`, and `--junit-xml-output`. Each accepts a file path and can be specified multiple times for different destinations.
+
+## JSON output structure
+
+The JSON output contains three top-level keys:
+
+```json
+{
+  "results": [...],
+  "errors": [...],
+  "paths": {
+    "scanned": [...],
+    "skipped": [...]
+  }
+}
+```
+
+Each object in `results` represents a single finding:
+
+```json
+{
+  "check_id": "python.lang.security.dangerous-exec",
+  "path": "src/app.py",
+  "start": { "line": 42, "col": 1, "offset": 1234 },
+  "end": { "line": 42, "col": 17, "offset": 1250 },
+  "extra": {
+    "message": "Use of exec() with user-controlled input",
+    "severity": "ERROR",
+    "metadata": {
+      "category": "security",
+      "technology": ["python"]
+    },
+    "lines": "exec(user_input)",
+    "fingerprint": "abc123..."
+  }
+}
+```
+
+Key fields:
+
+| Field | Description |
+|-------|-------------|
+| `check_id` | Rule ID that produced this finding |
+| `path` | Relative path to the file |
+| `start` / `end` | Line, column, and byte offset of the matched code |
+| `extra.message` | Rule message with remediation guidance |
+| `extra.severity` | `INFO`, `WARNING`, or `ERROR` |
+| `extra.lines` | The matched source code |
+| `extra.fingerprint` | Stable identifier for deduplication |
+
+## SARIF output for GitHub Code Scanning
+
+To integrate with [GitHub Code Scanning](https://docs.github.com/en/code-security/code-scanning), upload the SARIF output as an artifact:
+
+```yaml
+- name: Run Semgrep
+  run: semgrep scan --config=auto --sarif --output semgrep.sarif .
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: semgrep.sarif
+  if: always()
+```
+
+<Note>
+The SARIF formatter includes ignored findings (those suppressed by `# nosemgrep`) so that GitHub Code Scanning can correctly mark them as dismissed. Other formats exclude ignored findings.
+</Note>
+
+## Exit codes
+
+Semgrep's exit code is independent of the output format:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success, no findings (or findings present but `--error` not set) |
+| `1` | Findings reported (when `--error` flag is used, or in `semgrep ci` with blocking findings) |
+| `2` | Invalid usage or configuration error |
+| `3` | Unexpected internal error |
+| `4` | Missing or invalid API key |
+| `5` | Invalid rule schema |
+| `7` | Timeout or out-of-memory error on a file |
+
+See [Exit codes](/reference/exit-codes) for the full reference.
+
+## Filtering output
+
+### Filter by severity
+
+Show only findings at the specified severity level (applies to `semgrep scan` only):
+
+```bash
+# Show only ERROR severity
+semgrep scan --config=auto --severity=ERROR .
+
+# Show only WARNING and ERROR
+semgrep scan --config=auto --severity=WARNING --severity=ERROR .
+```
+
+### Filter by rule
+
+Exclude or restrict to specific rules:
+
+```bash
+# Exclude a specific rule
+semgrep scan --config=auto --exclude-rule=python.lang.security.some-rule .
+
+# Run only specific rules from the config
+semgrep scan --config=auto --include-rule=python.lang.security.some-rule .
+```
+
+### Suppress specific findings inline
+
+See [Ignoring files and findings](/running-scans/ignoring-files) for `# nosemgrep` suppression.

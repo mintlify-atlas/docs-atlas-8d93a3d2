@@ -1,97 +1,109 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Semgrep"
+description: "Code scanning at ludicrous speed. Find bugs and enforce secure coding standards across 30+ languages using patterns that look like source code."
 ---
 
-## Setting up
-
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get Semgrep running on your codebase in under 5 minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="download" href="/installation">
+    Install via pip, Homebrew, or Docker on any platform.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Writing Rules" icon="pen-to-square" href="/writing-rules/overview">
+    Write custom rules using patterns that look like your code.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli-reference">
+    Full reference for all commands, flags, and options.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What is Semgrep?
 
-Everything you need to create world-class documentation.
+Semgrep is a fast, open-source static analysis tool that searches code, finds bugs, and enforces secure guardrails and coding standards. It supports 30+ languages and runs in an IDE, as a pre-commit check, and as part of CI/CD workflows.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+Semgrep is **semantic grep for code**. While running `grep "2"` would only match the exact string `2`, Semgrep matches `x = 1; y = x + 1` when searching for `2`. Rules look like the code you already write — no abstract syntax trees, regex wrestling, or painful DSLs.
 
-## Need inspiration?
+```yaml Example Semgrep rule
+rules:
+  - id: print-to-logger
+    patterns:
+      - pattern: print(...)
+    message: |
+      Found a print() statement. Consider using a logger instead
+      for better log management and control.
+    languages: [python]
+    severity: WARNING
+```
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+## Key capabilities
+
+<CardGroup cols={3}>
+  <Card title="30+ Languages" icon="code">
+    Python, Java, JavaScript, TypeScript, Go, Ruby, C, C++, Rust, and many more.
+  </Card>
+  <Card title="Pattern Matching" icon="magnifying-glass">
+    Semantic matching with metavariables (`$X`) and ellipsis operators (`...`).
+  </Card>
+  <Card title="Taint Analysis" icon="shield">
+    Track data flow from untrusted sources to dangerous sinks.
+  </Card>
+  <Card title="Autofix" icon="wand-magic-sparkles">
+    Automatically rewrite code to fix detected issues.
+  </Card>
+  <Card title="CI/CD Integration" icon="gears">
+    Native integrations with GitHub Actions, GitLab CI, and more.
+  </Card>
+  <Card title="MCP Server" icon="robot">
+    AI coding assistant integration via Model Context Protocol.
+  </Card>
+</CardGroup>
+
+## Semgrep ecosystem
+
+<CardGroup cols={2}>
+  <Card title="Semgrep Community Edition" icon="brackets-curly" href="/introduction">
+    The open-source engine at the heart of everything. Suitable for ad-hoc use cases, security audits, and codifying coding standards.
+  </Card>
+  <Card title="Semgrep AppSec Platform" icon="shield-halved" href="https://semgrep.dev/login">
+    Orchestrate and scale SAST, SCA, and Secrets scanning across an organization with no risk of overwhelming developers.
+  </Card>
+  <Card title="Semgrep Registry" icon="globe" href="https://semgrep.dev/explore">
+    2,000+ community-driven rules covering security, correctness, and dependency vulnerabilities.
+  </Card>
+  <Card title="Semgrep Playground" icon="play" href="https://semgrep.dev/editor">
+    Write and test rules interactively in your browser without installing anything.
+  </Card>
+</CardGroup>
+
+## Get started
+
+<Steps>
+  <Step title="Install Semgrep">
+    Install using your preferred method:
+    ```bash
+    # macOS
+    brew install semgrep
+
+    # pip (Linux/macOS/Windows)
+    python3 -m pip install semgrep
+
+    # Docker
+    docker pull semgrep/semgrep:latest
+    ```
+  </Step>
+  <Step title="Run your first scan">
+    Scan your project using a community rule pack:
+    ```bash
+    semgrep scan --config=auto .
+    ```
+  </Step>
+  <Step title="Write a custom rule">
+    Write a rule that matches patterns in your own codebase and add it to your workflow.
+    See [Writing Rules](/writing-rules/overview) to learn how.
+  </Step>
+</Steps>
+
+<Note>
+  Semgrep analyzes code locally on your computer or in your build environment. **By default, code is never uploaded.**
+</Note>
