@@ -1,0 +1,110 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Semgrep",
+  "projectDescription": "A fast, open-source static analysis tool that searches code, finds bugs, and enforces secure coding standards across 30+ languages using patterns that look like source code.",
+  "theme": "aspen",
+  "primaryColor": "#1bc096",
+  "lightColor": "#92dfd1",
+  "darkColor": "#2c3434",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/rules",
+              "concepts/pattern-syntax",
+              "concepts/metavariables",
+              "concepts/language-support"
+            ]
+          },
+          {
+            "group": "Writing Rules",
+            "pages": [
+              "writing-rules/overview",
+              "writing-rules/pattern-examples",
+              "writing-rules/taint-analysis",
+              "writing-rules/autofix"
+            ]
+          },
+          {
+            "group": "Running Scans",
+            "pages": [
+              "running-scans/local-scan",
+              "running-scans/ci-cd",
+              "running-scans/output-formats",
+              "running-scans/ignoring-files"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/github-actions",
+              "integrations/gitlab-ci",
+              "integrations/pre-commit",
+              "integrations/mcp-server"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/cli-reference",
+              "reference/rule-schema",
+              "reference/exit-codes",
+              "reference/configuration"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/overview",
+              "contributing/development-setup",
+              "contributing/architecture"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Pattern-based static analysis that matches code semantically, not just textually",
+    "Support for 30+ programming languages including Python, Java, JavaScript, Go, Ruby, C, and more",
+    "Metavariable syntax ($X, $...) for flexible pattern matching without AST knowledge",
+    "Taint analysis for tracking data flow from sources to sinks",
+    "Autofix capability for automatic code remediation",
+    "CI/CD integration with GitHub Actions, GitLab CI, and more",
+    "MCP (Model Context Protocol) server for AI coding assistant integration",
+    "SAST, SCA (Supply Chain), and Secrets scanning capabilities",
+    "Pre-commit hook support for scanning code before commits",
+    "Output in multiple formats: JSON, SARIF, GitLab SAST, JUnit XML, and text"
+  ],
+  "publicApiSurface": [
+    "semgrep scan",
+    "semgrep ci",
+    "semgrep login",
+    "semgrep logout",
+    "semgrep publish",
+    "semgrep mcp",
+    "semgrep install-semgrep-pro",
+    "--config / -c (rule configuration)",
+    "--pattern / -e (inline pattern)",
+    "--lang / -l (language)",
+    "--output / -o (output file)",
+    "--json (JSON output format)",
+    "--sarif (SARIF output format)",
+    "--autofix (apply fixes)",
+    "--severity (filter by severity)",
+    "--include / --exclude (file filtering)",
+    "--metrics (telemetry control)"
+  ]
+}
